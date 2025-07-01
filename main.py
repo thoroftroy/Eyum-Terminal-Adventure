@@ -584,6 +584,33 @@ def rotate_monsters():
     if len(monster_list) > 3:
         monster_list.append(monster_list.pop(0))
 
+def heal_other_characters(overflow_heal, exclude_name):
+    for name in characters:
+        if name == exclude_name:
+            continue
+        path = os.path.join(save_directory, f"{name}.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            pdata = data.get("player", {})
+            pstats = data.get("persistent_stats", {})
+            if pstats.get("is_dead"):
+                continue
+            if pdata["health"] < pdata["max_health"]:
+                needed = pdata["max_health"] - pdata["health"]
+                healed = min(overflow_heal, needed)
+                pdata["health"] += healed
+                overflow_heal -= healed
+                print(Fore.CYAN + f"{name} is healed for {healed} HP.")
+                with open(path, "w") as f:
+                    json.dump(data, f, indent=4)
+                if overflow_heal <= 0:
+                    break
+        except Exception as e:
+            print(Fore.RED + f"[ERROR] Healing {name}: {e}")
+
 def combat(player_data, monsters):
     global current_monster_group
     while player_data["health"] > 0 and any(m["health"] > 0 for m in monsters):
@@ -715,8 +742,15 @@ def combat(player_data, monsters):
                 healing = sd["healing"][idx]
                 if healing:
                     heal = roll_dice(f"{healing}d4")
+                    pre_heal = player_data["health"]
                     player_data["health"] = min(player_data["health"] + heal, player_data["max_health"])
-                    print(Fore.CYAN + f"You heal for {heal} HP.")
+                    used = player_data["health"] - pre_heal
+                    overflow = heal - used
+                    print(Fore.CYAN + f"You heal for {used} HP.")
+                    if overflow > 0:
+                        print(Fore.CYAN + f"{overflow} HP overflowed to allies.")
+                        heal_other_characters(overflow, player_data["character"])
+                        time.sleep(1)
             except:
                 print(Fore.RED + "Skill failed or canceled.")
                 time.sleep(0.5)
