@@ -7,6 +7,8 @@ import sys
 import platform
 import json
 
+from game_data import drop_table, skill_table, monster_list
+
 # === Constants and Globals ===
 current_version = "0.1"
 save_directory = "eyum/saves"
@@ -31,15 +33,6 @@ player_data = {
     "equipped": [],
 }
 
-monster_list = [
-    {"name": "Slime", "health": 6, "damage": 1},
-    {"name": "Goblin", "health": 8, "damage": 2},
-    {"name": "Wolf", "health": 12, "damage": 3},
-    {"name": "Slime 2", "health": 16, "damage": 4},
-    {"name": "Goblin 2", "health": 20, "damage": 5},
-    {"name": "Wolf 2", "health": 25, "damage": 6},
-]
-
 persistent_stats = {
     "current_version": current_version,
     "is_dead": False,
@@ -51,9 +44,9 @@ persistent_stats = {
 character_skills = {
     "Lucian": {
         "skills": ["Firebolt", "Fireblast"],
-        "damage": ["1d6","2d8"],
+        "damage": ["1d4","2d8"],
         "attacks": [2, 1],
-        "healing": [0, 1],
+        "healing": [0, 0],
         "mana_costs": [3, 7],
     },
     "Ilana": {
@@ -65,7 +58,7 @@ character_skills = {
     },
     "George": {
         "skills": ["Sword Slash", "Sword Burst"],
-        "damage": ["1d8", "1d6"],
+        "damage": ["1d6", "1d4"],
         "attacks": [1, 4],
         "healing": [0, 0],
         "mana_costs": [2, 7],
@@ -77,34 +70,8 @@ current_save_name = ''
 global_save_path = ''
 current_monster_group = None  # global variable for active encounter
 
-skill_table = [
-    {"name": "Ember Spark", "damage": "1d4", "attacks": 1, "healing": 0, "mana_cost": 2, "weight": 10},
-    {"name": "Piercing Shot", "damage": "1d6", "attacks": 1, "healing": 0, "mana_cost": 3, "weight": 10},
-    {"name": "Quick Slash", "damage": "1d4", "attacks": 2, "healing": 0, "mana_cost": 4, "weight": 9},
-    {"name": "Healing Pulse", "damage": "0", "attacks": 0, "healing": 2, "mana_cost": 4, "weight": 8},
-    {"name": "Frost Needle", "damage": "1d8", "attacks": 1, "healing": 0, "mana_cost": 6, "weight": 8},
-    {"name": "Shadow Jab", "damage": "1d6", "attacks": 2, "healing": 0, "mana_cost": 6, "weight": 7},
-    {"name": "Radiant Surge", "damage": "1d4", "attacks": 1, "healing": 1, "mana_cost": 5, "weight": 7},
-    {"name": "Arcane Burst", "damage": "2d6", "attacks": 1, "healing": 0, "mana_cost": 8, "weight": 6},
-    {"name": "Whirlwind", "damage": "1d4", "attacks": 3, "healing": 0, "mana_cost": 7, "weight": 6},
-    {"name": "Dark Recovery", "damage": "1d4", "attacks": 1, "healing": 2, "mana_cost": 6, "weight": 5},
-]
-
-drop_table = [
-    {"name": "Rusty Dagger", "type": "weapon", "effect": "+1 damage", "value": 5, "weight": 10},
-    {"name": "Healing Herb", "type": "potion", "effect": "+5 HP", "value": 10, "weight": 10},
-    {"name": "Mana Leaf", "type": "potion", "effect": "+5 MP", "value": 12, "weight": 9},
-    {"name": "Old Leather Armor", "type": "armor", "effect": "+1 defense", "value": 15, "weight": 9},
-    {"name": "Steel Sword", "type": "weapon", "effect": "+3 damage", "value": 30, "weight": 7},
-    {"name": "Minor Rune Stone", "type": "magic", "effect": "+2 mana", "value": 20, "weight": 7},
-    {"name": "Golden Elixir", "type": "potion", "effect": "Restore all HP", "value": 100, "weight": 3},
-    {"name": "Phantom Cloak", "type": "armor", "effect": "+2 dodge", "value": 50, "weight": 2},
-    {"name": "Demon Core", "type": "relic", "effect": "+5 all stats", "value": 250, "weight": 1},
-]
-
-
 # === Utility Functions ===
-def render_health_bar(current, max_val, length=20, color=Fore.GREEN):
+def render_health_bar(current, max_val, length=40, color=Fore.GREEN):
     filled_length = int(length * current / max_val)
     bar = f"{color}{'█' * filled_length}{Fore.BLACK}{'█' * (length - filled_length)}{Style.RESET_ALL}"
     return bar
