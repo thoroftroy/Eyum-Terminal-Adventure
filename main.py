@@ -623,6 +623,29 @@ def combat(player_data, monsters):
         print(Fore.GREEN + f"{player_data['character']} (Lv{player_data['level']} {xp_bar})")
         print(Fore.LIGHTBLACK_EX + f"Floor {persistent_stats['floor']} - Room {persistent_stats['room']}\n")
 
+        # Show other characters' status
+        print(Fore.LIGHTBLACK_EX + "--- Allies ---")
+        for name in characters:
+            if name == player_data["character"]:
+                continue
+            path = os.path.join(save_directory, f"{name}.json")
+            if not os.path.exists(path):
+                print(Fore.LIGHTBLACK_EX + f"{name}: (hasn't joined the battle)")
+                continue
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                stats = data.get("player", {})
+                dead = data.get("persistent_stats", {}).get("is_dead", False)
+                if dead:
+                    print(Fore.LIGHTBLACK_EX + f"{name}: (dead)")
+                else:
+                    hp = stats.get("health", 0)
+                    max_hp = stats.get("max_health", 0)
+                    print(Fore.LIGHTBLACK_EX + f"{name}: {hp} / {max_hp} HP")
+            except:
+                print(Fore.LIGHTBLACK_EX + f"{name}: (unreadable save)")
+        print("\n")
         hp_text = f"{Fore.GREEN}HP: {player_data['health']} / {player_data['max_health']}"
         mp_text = f"{Fore.BLUE}MP: {player_data['mana']} / {player_data['max_mana']}"
         hp_bar = player_bar
