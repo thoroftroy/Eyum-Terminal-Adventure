@@ -15,7 +15,7 @@ cd eyum-terminal-adventure
 
 ### 2. Install Python Requirements
 
-Eyum uses Python 3.12+ and the `colorama` library.
+Eyum uses Python 3+ and the `colorama` library.
 
 ```bash
 pip install colorama
@@ -33,7 +33,7 @@ python main.py
 
 - **Windows**: Run in Command Prompt or PowerShell.
 - **macOS**: Use Terminal. Ensure Python 3 is installed (`brew install python`).
-- **Linux**: Works in any terminal with Python 3.9+. Install Python and pip via:
+- **Linux**: Works in any terminal with Python 3+. Install Python and pip via:
 
 ```bash
 sudo apt install python3 python3-pip
