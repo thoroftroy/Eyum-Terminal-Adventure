@@ -1,0 +1,70 @@
+{
+    "player": {
+        "character": "George",
+        "level": 1,
+        "max_health": 25,
+        "health": 22,
+        "mana": 7,
+        "max_mana": 7,
+        "damage": 2,
+        "coins": 0,
+        "xp": 0,
+        "xp_to_next": 10,
+        "skill_points": 0,
+        "skills": [
+            "Sword Slash",
+            "Sword Burst"
+        ],
+        "skill_data": {
+            "damage": [
+                "1d6",
+                "1d4"
+            ],
+            "attacks": [
+                2,
+                4
+            ],
+            "healing": [
+                0,
+                0
+            ],
+            "mana_costs": [
+                2,
+                7
+            ]
+        },
+        "learned_skills": {},
+        "inventory": [],
+        "equipped": [],
+        "base_stats": {
+            "max_health": 25,
+            "health": 25,
+            "mana": 7,
+            "max_mana": 7,
+            "damage": 2
+        },
+        "name": "George"
+    },
+    "persistent_stats": {
+        "current_version": "0.1",
+        "is_dead": false,
+        "floor": 1,
+        "room": 2,
+        "current_monsters": [
+            {
+                "name": "Slime",
+                "health": -2,
+                "damage": 1,
+                "max_health": 6
+            },
+            {
+                "name": "Slime",
+                "health": 4,
+                "damage": 1,
+                "max_health": 6
+            }
+        ],
+        "rooms_since_shop": 1,
+        "rooms_since_treasure": 1
+    }
+}

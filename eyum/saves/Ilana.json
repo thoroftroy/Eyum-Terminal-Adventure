@@ -1,0 +1,57 @@
+{
+    "player": {
+        "character": "Ilana",
+        "level": 1,
+        "max_health": 30,
+        "health": 30,
+        "mana": 7,
+        "max_mana": 7,
+        "damage": 1,
+        "coins": 0,
+        "xp": 0,
+        "xp_to_next": 10,
+        "skill_points": 0,
+        "skills": [
+            "Necro Blast",
+            "Life Drain"
+        ],
+        "skill_data": {
+            "damage": [
+                "1d4",
+                "1d4"
+            ],
+            "attacks": [
+                1,
+                2
+            ],
+            "healing": [
+                2,
+                4
+            ],
+            "mana_costs": [
+                2,
+                6
+            ]
+        },
+        "learned_skills": {},
+        "inventory": [],
+        "equipped": [],
+        "base_stats": {
+            "max_health": 30,
+            "health": 30,
+            "mana": 7,
+            "max_mana": 7,
+            "damage": 1
+        },
+        "name": "Ilana"
+    },
+    "persistent_stats": {
+        "current_version": "0.1",
+        "is_dead": false,
+        "floor": 1,
+        "room": 1,
+        "current_monsters": null,
+        "rooms_since_shop": 0,
+        "rooms_since_treasure": 0
+    }
+}

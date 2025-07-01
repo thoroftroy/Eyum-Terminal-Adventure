@@ -611,6 +611,60 @@ def heal_other_characters(overflow_heal, exclude_name):
         except Exception as e:
             print(Fore.RED + f"[ERROR] Healing {name}: {e}")
 
+def apply_party_idle_effects(active_name, monsters):
+    for name in characters:
+        if name == active_name:
+            continue  # skip current character
+        path = os.path.join(save_directory, f"{name}.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            pdata = data.get("player", {})
+            pstats = data.get("persistent_stats", {})
+            if pstats.get("is_dead"):
+                continue
+
+            level = pdata.get("level", 1)
+            if name == "George":
+                dice_str = f"{level}d4"
+                targetable = [m for m in monsters if m["health"] > 0]
+                if targetable:
+                    target = random.choice(targetable)
+                    dmg = roll_dice(dice_str)
+                    target["health"] -= dmg
+                    print(Fore.YELLOW + f"George strikes {target['name']} for {dmg} damage.")
+            elif name == "Lucian":
+                dice_str = f"{level}d2"
+                dmg = roll_dice(dice_str)
+                for m in monsters:
+                    if m["health"] > 0:
+                        m["health"] -= dmg
+                print(Fore.YELLOW + f"Lucian hits all enemies for {dmg} damage.")
+            elif name == "Ilana":
+                dice_str = f"{level}d2"
+                heal = roll_dice(dice_str)
+                for ally in characters:
+                    apath = os.path.join(save_directory, f"{ally}.json")
+                    if not os.path.exists(apath):
+                        continue
+                    with open(apath, "r") as af:
+                        adata = json.load(af)
+                    ap = adata["player"]
+                    apstats = adata["persistent_stats"]
+                    if apstats.get("is_dead"):
+                        continue
+                    old = ap["health"]
+                    ap["health"] = min(ap["max_health"], ap["health"] + heal)
+                    healed = ap["health"] - old
+                    if healed > 0:
+                        print(Fore.CYAN + f"Ilana heals {ally} for {healed} HP.")
+                    with open(apath, "w") as af:
+                        json.dump(adata, af, indent=4)
+        except Exception as e:
+            print(Fore.RED + f"[ERROR] Ally effect for {name}: {e}")
+
 def combat(player_data, monsters):
     global current_monster_group
     while player_data["health"] > 0 and any(m["health"] > 0 for m in monsters):
@@ -697,6 +751,7 @@ def combat(player_data, monsters):
             print(Fore.GREEN + f"You dealt {dmg} damage to {monsters[choice]['name']}.")
             restore_amount = max(1, player_data["max_mana"] // 10)
             player_data["mana"] = min(player_data["mana"] + restore_amount, player_data["max_mana"])
+            apply_party_idle_effects(player_data["character"], monsters)
 
         elif action in ["2", "skill", "useskill", "skl"]:
             skills = player_data.get("skills", [])
@@ -994,6 +1049,57 @@ def startup():
         clear_screen()
         print(Fore.YELLOW + f"Eyum Terminal Adventure v{current_version}")
         print(Fore.BLUE + "Choose your character or type 'exit' to quit:")
+        print(Fore.CYAN + "\nYou will control one character, but the others will act with you in battle.")
+        print(Fore.CYAN + "Lucian deals AoE damage, George hits a random enemy, Ilana heals everyone.\n")
+        # Create missing saves on boot
+        for name in characters:
+            save_path = os.path.join(save_directory, f"{name}.json")
+            if not os.path.exists(save_path):
+                current_save_name = f"{name}.json"
+                global_save_path = save_path
+                base_stats = {
+                    "max_health": 25,
+                    "health": 25,
+                    "mana": 7,
+                    "max_mana": 7,
+                    "damage": 1,
+                }
+                if name == "Lucian":
+                    base_stats["mana"] += 3
+                    base_stats["max_mana"] += 3
+                elif name == "Ilana":
+                    base_stats["health"] += 5
+                    base_stats["max_health"] += 5
+                elif name == "George":
+                    base_stats["damage"] += 1
+
+                base = character_skills[name]
+                player_data.update({
+                    "character": name,
+                    "level": 1,
+                    "xp": 0,
+                    "xp_to_next": 10,
+                    "skill_points": 0,
+                    "skills": base["skills"],
+                    "skill_data": {
+                        "damage": base["damage"],
+                        "attacks": base["attacks"],
+                        "healing": base["healing"],
+                        "mana_costs": base["mana_costs"]
+                    },
+                    "learned_skills": {},
+                    "inventory": [],
+                    "equipped": [],
+                })
+                player_data["base_stats"] = base_stats.copy()
+                player_data.update(base_stats)
+                persistent_stats.update({
+                    "is_dead": False,
+                    "floor": 1,
+                    "room": 1,
+                })
+                apply_equipment_bonuses()
+                save_to_file()
         list_saved_files()
         choice = input(Fore.GREEN + "> ").strip().capitalize()
         if choice.lower() == "exit":
@@ -1009,17 +1115,18 @@ def startup():
                     save_path = os.path.join(save_directory, f"{name}.json")
                     if os.path.exists(save_path):
                         os.remove(save_path)
-                # Clear persistent monster group and stats
-                global current_monster_group
+                # Reset persistent data
                 current_monster_group = None
-                persistent_stats["current_monsters"] = None
-                persistent_stats["floor"] = 1
-                persistent_stats["room"] = 1
-                persistent_stats["is_dead"] = False
-                print(Fore.GREEN + "All save data deleted.")
+                persistent_stats.update({
+                    "current_monsters": None,
+                    "floor": 1,
+                    "room": 1,
+                    "is_dead": False
+                })
+                print(Fore.GREEN + "All save data deleted. Reinitializing...")
                 time.sleep(1)
-                clear_screen()
-                continue
+                # Recreate fresh saves automatically
+                return startup()
             else:
                 print("Reset cancelled.")
                 time.sleep(1)
