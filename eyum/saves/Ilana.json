@@ -1,16 +1,16 @@
 {
     "player": {
         "character": "Ilana",
-        "level": 1,
-        "max_health": 30,
-        "health": 30,
-        "mana": 7,
-        "max_mana": 7,
+        "level": 3,
+        "max_health": 43,
+        "health": 43,
+        "mana": 9,
+        "max_mana": 9,
         "damage": 1,
-        "coins": 0,
-        "xp": 0,
-        "xp_to_next": 10,
-        "skill_points": 0,
+        "coins": 12,
+        "xp": 5,
+        "xp_to_next": 22,
+        "skill_points": 2,
         "skills": [
             "Necro Blast",
             "Life Drain"
@@ -43,15 +43,31 @@
             "max_mana": 7,
             "damage": 1
         },
-        "name": "Ilana"
+        "name": "Ilana",
+        "upgrade_costs": {
+            "max_health": 1,
+            "max_mana": 1,
+            "damage": 3
+        },
+        "skill_upgrade_costs": [
+            1,
+            1
+        ]
     },
     "persistent_stats": {
         "current_version": "0.1",
         "is_dead": false,
         "floor": 1,
-        "room": 1,
-        "current_monsters": null,
-        "rooms_since_shop": 0,
-        "rooms_since_treasure": 0
+        "room": 6,
+        "current_monsters": [
+            {
+                "name": "Goblin",
+                "health": 8,
+                "damage": 2,
+                "max_health": 8
+            }
+        ],
+        "rooms_since_shop": 1,
+        "rooms_since_treasure": 3
     }
 }

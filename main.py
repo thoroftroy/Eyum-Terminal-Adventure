@@ -180,6 +180,33 @@ def load_from_file(filename):
         return False
 
 # === Core Functions ===
+def convert_effect_string_to_bonus(item):
+    effect_str = item.get("effect", "").strip()
+    effect_str = effect_str.replace("+", "").lower()
+
+    bonuses = {"damage": 0, "max_health": 0, "max_mana": 0}
+    parts = effect_str.replace(" and ", ",").split(",")
+    for part in parts:
+        words = part.strip().split()
+        if len(words) >= 2:
+            try:
+                val = int(words[0])
+                stat = " ".join(words[1:])
+                if "damage" in stat:
+                    bonuses["damage"] += val
+                elif "mana" in stat or "mp" in stat:
+                    bonuses["max_mana"] += val
+                elif "health" in stat or "hp" in stat:
+                    bonuses["max_health"] += val
+                elif "all stats" in stat:
+                    bonuses["damage"] += val
+                    bonuses["max_health"] += val
+                    bonuses["max_mana"] += val
+            except ValueError:
+                continue
+    item["bonus"] = bonuses
+    return item
+
 def apply_equipment_bonuses():
     base = player_data.get("base_stats", {
         "damage": 1,
@@ -191,25 +218,14 @@ def apply_equipment_bonuses():
     player_data["max_mana"] = base["max_mana"]
 
     for item in player_data.get("equipped", []):
-        effect = item.get("effect", "").lower()
+        # If item uses old string format, convert it live
+        if "bonus" not in item and "effect" in item:
+            item = convert_effect_string_to_bonus(item)
 
-        # Parse all numeric bonuses
-        if "+1 damage" in effect:
-            player_data["damage"] += 1
-        if "+3 damage" in effect:
-            player_data["damage"] += 3
-        if "+2 mana" in effect or "+2 mp" in effect:
-            player_data["max_mana"] += 2
-        if "+5 max mana" in effect:
-            player_data["max_mana"] += 5
-        if "+2 health" in effect or "+2 hp" in effect:
-            player_data["max_health"] += 2
-        if "+5 max health" in effect:
-            player_data["max_health"] += 5
-        if "+5 all stats" in effect:
-            player_data["damage"] += 5
-            player_data["max_health"] += 5
-            player_data["max_mana"] += 5
+        bonus = item.get("bonus", {})
+        player_data["damage"] += bonus.get("damage", 0)
+        player_data["max_health"] += bonus.get("max_health", 0)
+        player_data["max_mana"] += bonus.get("max_mana", 0)
 
     # Clamp current values if they're over new maxes
     player_data["health"] = min(player_data["health"], player_data["max_health"])
@@ -276,52 +292,78 @@ def open_treasure_room():
 
 def open_inventory_menu():
     clear_screen()
-    print(Fore.BLUE + "--- Inventory ---")
-    if not player_data["inventory"]:
-        print("Inventory is empty.")
-        press_enter()
-        return
+    print(Fore.BLUE + "--- Party Inventory & Equipment ---")
 
-    types = ["weapon", "armor", "magic", "relic", "potion"]
-    equipped = {item["type"]: item for item in player_data.get("equipped", [])}
-    grouped = {t: [] for t in types}
+    all_items = []
+    index_map = []
+    for char_name in characters:
+        path = os.path.join(save_directory, f"{char_name}.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            pdata = data["player"]
+            equipped = {item["type"]: item for item in pdata.get("equipped", [])}
+            inventory = pdata.get("inventory", [])
+            types = ["weapon", "armor", "magic", "relic", "potion"]
+            print(Fore.CYAN + f"\n== {char_name}'s Inventory ==")
+            for t in types:
+                print(Fore.LIGHTBLACK_EX + f"  {t.capitalize()}:")
+                if t in equipped:
+                    bonus = item.get("bonus", {})
+                    bonus_text = f"{bonus.get('damage', 0)} dmg, {bonus.get('max_health', 0)} HP, {bonus.get('max_mana', 0)} MP"
+                    print(Fore.YELLOW + f"    Equipped: {equipped[t]['name']} ({bonus_text})")
+                for item in inventory:
+                    if item["type"] == t:
+                        index_map.append((char_name, item))
+                        print(Fore.WHITE + f"    [{len(index_map)}] {item['name']} - {bonus_text}")
+        except Exception as e:
+            print(Fore.RED + f"[ERROR] {char_name}: {e}")
 
-    for item in player_data["inventory"]:
-        grouped.setdefault(item["type"], []).append(item)
-
-    for t in types:
-        print(Fore.CYAN + f"\n{t.capitalize()}s:")
-        if t in equipped:
-            print(Fore.YELLOW + f"  Equipped: {equipped[t]['name']} ({equipped[t]['effect']})")
-        for i, item in enumerate(grouped[t]):
-            print(Fore.WHITE + f"  [{i+1}] {item['name']} - {item['effect']}")
-
-    print(Fore.GREEN + "\nType the item number to equip it or 'exit' to return.")
+    print(Fore.GREEN + "\nType the item number to equip it, or 'exit' to go back.")
     choice = input(Fore.GREEN + "> ").strip().lower()
-
     if choice == "exit":
         return
-
     try:
-        num = int(choice)
-        count = 0
-        for t in types:
-            for item in grouped[t]:
-                count += 1
-                if count == num:
-                    # Equip item
-                    old_equipped = [e for e in player_data["equipped"] if e["type"] == item["type"]]
-                    for e in old_equipped:
-                        player_data["equipped"].remove(e)
-                    player_data["equipped"].append(item)
-                    print(Fore.YELLOW + f"Equipped {item['name']}")
-                    apply_equipment_bonuses()
-                    save_to_file()
-                    return
-        print(Fore.RED + "Invalid number.")
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(index_map):
+            raise ValueError
+        char_name, item = index_map[idx]
+        path = os.path.join(save_directory, f"{char_name}.json")
+        with open(path, "r") as f:
+            data = json.load(f)
+        pdata = data["player"]
+        old_equipped = [e for e in pdata["equipped"] if e["type"] == item["type"]]
+        for e in old_equipped:
+            pdata["equipped"].remove(e)
+        pdata["equipped"].append(item)
+
+        # Reapply stats
+        base = pdata.get("base_stats", {
+            "damage": 1, "max_health": 25, "max_mana": 7
+        })
+        pdata["damage"] = base["damage"]
+        pdata["max_health"] = base["max_health"]
+        pdata["max_mana"] = base["max_mana"]
+
+        for eq in pdata.get("equipped", []):
+            bonus = item.get("bonus", {})
+            player_data["damage"] += bonus.get("damage", 0)
+            player_data["max_health"] += bonus.get("max_health", 0)
+            player_data["max_mana"] += bonus.get("max_mana", 0)
+
+        pdata["health"] = min(pdata["health"], pdata["max_health"])
+        pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
+        with open(path, "w") as f:
+            json.dump(data, f, indent=4)
+
+        print(Fore.YELLOW + f"Equipped {item['name']} on {char_name}")
+        press_enter()
     except:
         print(Fore.RED + "Invalid input.")
-    press_enter()
+        press_enter()
+
 
 def open_upgrade_menu():
     # initialize upgrade cost trackers if not present
@@ -722,7 +764,7 @@ def combat(player_data, monsters):
                 print(Fore.RED + f"[{idx+1}] {m['name']} HP: {m['health']} / {m['max_health']}")
                 print(bar)
 
-        print(Fore.GREEN + "\n[1] Attack  [2] Use Skill  [3] Retreat  [4] Upgrade Menu  [5] Equipment  [6] Exit Game")
+        print(Fore.GREEN + "\n[1] Attack  [2] Use Skill  [3] Retreat  [4] Upgrade Menu  [5] Equipment  [6] Character Selection")
         action = input(Fore.GREEN + "> ").strip().lower()
 
         if action in ["1", "atk", "attack"]:

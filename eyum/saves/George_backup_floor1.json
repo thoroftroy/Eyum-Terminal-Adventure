@@ -3,8 +3,8 @@
         "character": "George",
         "level": 5,
         "max_health": 25,
-        "health": 19,
-        "mana": 2,
+        "health": 25,
+        "mana": 0,
         "max_mana": 7,
         "damage": 2,
         "coins": 44,
@@ -74,16 +74,9 @@
         "current_version": "0.1",
         "is_dead": false,
         "floor": 2,
-        "room": 2,
-        "current_monsters": [
-            {
-                "name": "Wolf",
-                "health": 3,
-                "damage": 3,
-                "max_health": 12
-            }
-        ],
-        "rooms_since_shop": 3,
-        "rooms_since_treasure": 13
+        "room": 1,
+        "current_monsters": null,
+        "rooms_since_shop": 2,
+        "rooms_since_treasure": 12
     }
 }

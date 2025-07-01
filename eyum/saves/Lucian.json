@@ -1,16 +1,16 @@
 {
     "player": {
         "character": "Lucian",
-        "level": 1,
-        "max_health": 25,
-        "health": 19,
-        "mana": 10,
-        "max_mana": 10,
+        "level": 2,
+        "max_health": 30,
+        "health": 30,
+        "mana": 12,
+        "max_mana": 12,
         "damage": 1,
-        "coins": 6,
-        "xp": 9,
-        "xp_to_next": 10,
-        "skill_points": 0,
+        "coins": 81,
+        "xp": 14,
+        "xp_to_next": 15,
+        "skill_points": 1,
         "skills": [
             "Firebolt",
             "Fireblast"
@@ -43,28 +43,31 @@
             "max_mana": 10,
             "damage": 1
         },
-        "name": "Lucian"
+        "name": "Lucian",
+        "upgrade_costs": {
+            "max_health": 1,
+            "max_mana": 1,
+            "damage": 3
+        },
+        "skill_upgrade_costs": [
+            1,
+            1
+        ]
     },
     "persistent_stats": {
         "current_version": "0.1",
         "is_dead": false,
         "floor": 1,
-        "room": 3,
+        "room": 5,
         "current_monsters": [
             {
                 "name": "Goblin",
-                "health": 2,
+                "health": 8,
                 "damage": 2,
                 "max_health": 8
-            },
-            {
-                "name": "Slime",
-                "health": 5,
-                "damage": 1,
-                "max_health": 6
             }
         ],
-        "rooms_since_shop": 2,
-        "rooms_since_treasure": 2
+        "rooms_since_shop": 3,
+        "rooms_since_treasure": 1
     }
 }
