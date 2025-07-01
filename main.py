@@ -39,6 +39,8 @@ persistent_stats = {
     "floor": 1,
     "room": 1,
     "current_monsters": None,
+    "rooms_since_shop": 0,
+    "rooms_since_treasure": 0,
 }
 
 character_skills = {
@@ -221,6 +223,7 @@ def gain_xp(amount):
         print(Fore.BLUE + f"Max mana increased to {player_data['max_mana']} and restored to full!")
 
 def open_treasure_room():
+    persistent_stats["rooms_since_treasure"] = 0
     clear_screen()
     print(Fore.YELLOW + "--- Treasure Room ---")
     coin_reward = random.randint(40, 80)
@@ -315,7 +318,7 @@ def open_upgrade_menu():
 
     while True:
         clear_screen()
-        print(f"{Fore.BLUE}Skill Points: {player_data['skill_points']}  |  XP: {player_data['xp']}")
+        print(f"{Fore.BLUE}Skill Points: {player_data['skill_points']}  |  XP: {player_data['xp']}  |  Hp: {player_data['health']}/{player_data['max_health']}")
 
         # Grab current costs
         costs = player_data["upgrade_costs"]
@@ -333,7 +336,7 @@ def open_upgrade_menu():
         print(f"{dmg_color}  [3] +1 Base Damage ({dmg_cost} pts)")
         print(Fore.CYAN + "  [4] Upgrade Skill")
         heal_color = Fore.GREEN if player_data["xp"] >= 1 else Fore.RED
-        print(f"{heal_color}  [5] Heal 25% HP (costs 10% XP)")
+        print(f"{heal_color}  [5] Heal 10% HP (costs 25% XP)")
         print(Fore.CYAN + "  [6] Exit")
 
         if player_data["skill_points"] <= 0:
@@ -415,12 +418,21 @@ def open_upgrade_menu():
                 continue
 
         elif choice == "5":
-            if player_data["xp"] < 1:
-                print(Fore.RED + "Not enough XP to spend.")
+            if player_data["health"] >= player_data["max_health"]:
+                print(Fore.YELLOW + "You're already at full health.")
                 time.sleep(1)
                 continue
-            xp_cost = max(1, int(player_data["xp"] * 0.10))
-            heal_amount = max(1, int(player_data["max_health"] * 0.25))
+
+            floor = persistent_stats.get("floor", 1)
+            min_cost = (floor + 1) * 10
+            xp_cost = max(min_cost, int(player_data["xp"] * 0.25))
+
+            if player_data["xp"] < xp_cost:
+                print(Fore.RED + f"Not enough XP. Heal costs {xp_cost} XP (minimum {min_cost}).")
+                time.sleep(1)
+                continue
+
+            heal_amount = max(1, int(player_data["max_health"] * 0.1))
             player_data["xp"] -= xp_cost
             player_data["health"] = min(player_data["health"] + heal_amount, player_data["max_health"])
             print(Fore.CYAN + f"You spent {xp_cost} XP and healed {heal_amount} HP!")
@@ -433,6 +445,7 @@ def open_upgrade_menu():
             time.sleep(1)
 
 def open_shop():
+    persistent_stats["rooms_since_shop"] = 0
     owned_items = [i["name"] for i in player_data["inventory"]]
     owned_skills = player_data["skills"]
 
@@ -560,9 +573,20 @@ def combat(player_data, monsters):
         xp_bar = f"{Fore.CYAN}{player_data['xp']}{Fore.GREEN}/{Fore.YELLOW}{player_data['xp_to_next']}{Fore.GREEN}"
         player_bar = render_health_bar(player_data["health"], player_data["max_health"], color=Fore.GREEN)
         mana_bar = render_health_bar(player_data["mana"], player_data["max_mana"], color=Fore.BLUE)
+
         print(Fore.GREEN + f"{player_data['character']} (Lv{player_data['level']} {xp_bar})")
-        print(f"HP: {player_data['health']} / {player_data['max_health']}  {player_bar}")
-        print(f"{Fore.BLUE}MP: {player_data['mana']} / {player_data['max_mana']}  {mana_bar}")
+        print(Fore.LIGHTBLACK_EX + f"Floor {persistent_stats['floor']} - Room {persistent_stats['room']}\n")
+
+        hp_text = f"{Fore.GREEN}HP: {player_data['health']} / {player_data['max_health']}"
+        mp_text = f"{Fore.BLUE}MP: {player_data['mana']} / {player_data['max_mana']}"
+        hp_bar = player_bar
+        mp_bar = mana_bar
+
+        # Align both bar labels
+        print(hp_text)
+        print(hp_bar)
+        print(mp_text)
+        print(mp_bar)
 
         print(Fore.RED + "\n--- Monsters ---")
         for idx, m in enumerate(monsters):
@@ -770,16 +794,27 @@ def explore_floor():
     for _ in range(10):
         persistent_stats["room"] += 1
 
-        # Small chance to go to a shop or a treasure room instead of a monster
+        # Guaranteed room logic
+        guaranteed_shop = persistent_stats.get("rooms_since_shop", 0) >= 10
+        guaranteed_treasure = persistent_stats.get("rooms_since_treasure", 0) >= 20
+
         rand = random.random()
-        if rand < 0.10 and player_data.get("coins", 0) > 0:
+        shop_trigger = rand < 0.10 or guaranteed_shop
+        treasure_trigger = rand < 0.15 or guaranteed_treasure
+
+        if shop_trigger and player_data.get("coins", 0) > 0:
             open_shop()
+            persistent_stats["rooms_since_shop"] = 0
             save_to_file()
             continue
-        elif rand < 0.15:
+        elif treasure_trigger:
             open_treasure_room()
+            persistent_stats["rooms_since_treasure"] = 0
             save_to_file()
             continue
+
+        persistent_stats["rooms_since_shop"] += 1
+        persistent_stats["rooms_since_treasure"] += 1
 
         # Generate new monster group and fight
         current_monster_group = generate_monster_group()
