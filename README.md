@@ -52,3 +52,15 @@ sudo apt install python3 python3-pip
 ## License
 
 MIT — use, modify, and share freely.
+
+---
+
+## Known Issues/Planned Features
+Currently the game is unbeatable, not only can you not scale fast enough but there is litteraly no ending. Also the begining is too easy, and the backups aren't great beacuse it only backs up the current character you have selected not everyone. I haven't play tested much beacuse I am still adding in basic functionality. 
+
+Currently I plan to add the following
+ -More room types to stumble on
+ -Minigames
+ -More allies (unlocked as you play)
+ -A story line, each floor will reveal more
+ -An actual freaking ending
