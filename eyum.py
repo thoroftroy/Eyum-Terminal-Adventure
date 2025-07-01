@@ -20,7 +20,7 @@ player_data = {
     "mana": 7,
     "max_mana": 7,
     "damage": 1,
-    "defense": 0,
+    "coins": 0,
     "xp": 0,
     "xp_to_next": 10,
     "skill_points": 0,
@@ -186,6 +186,36 @@ def load_from_file(filename):
         return False
 
 # === Core Functions ===
+def apply_equipment_bonuses():
+    # Reset base stats (you can store true base values separately if needed)
+    base_stats = {
+        "damage": 1,
+        "defense": 0,
+        "max_health": 15,
+        "max_mana": 7,
+    }
+    player_data.update(base_stats)
+
+    for item in player_data.get("equipped", []):
+        effect = item.get("effect", "").lower()
+        if "+1 damage" in effect:
+            player_data["damage"] += 1
+        elif "+3 damage" in effect:
+            player_data["damage"] += 3
+        elif "+1 defense" in effect:
+            player_data["defense"] += 1
+        elif "+2 mana" in effect:
+            player_data["max_mana"] += 2
+        elif "restore" in effect:
+            continue  # Potions, not equipment
+        elif "+2 dodge" in effect:
+            pass  # Not implemented yet
+        elif "+5 all stats" in effect:
+            player_data["damage"] += 5
+            player_data["defense"] += 5
+            player_data["max_health"] += 5
+            player_data["max_mana"] += 5
+
 def gain_xp(amount):
     player_data["xp"] += amount
     print(Fore.CYAN + f"You gained {amount} XP!")
@@ -200,6 +230,55 @@ def gain_xp(amount):
         print(Fore.YELLOW + f"Level up! Now level {player_data['level']}")
         print(Fore.MAGENTA + f"Skill point earned! Total: {player_data['skill_points']}")
         print(Fore.BLUE + f"Max mana increased to {player_data['max_mana']} and restored to full!")
+
+def open_inventory_menu():
+    clear_screen()
+    print(Fore.BLUE + "--- Inventory ---")
+    if not player_data["inventory"]:
+        print("Inventory is empty.")
+        press_enter()
+        return
+
+    types = ["weapon", "armor", "magic", "relic", "potion"]
+    equipped = {item["type"]: item for item in player_data.get("equipped", [])}
+    grouped = {t: [] for t in types}
+
+    for item in player_data["inventory"]:
+        grouped.setdefault(item["type"], []).append(item)
+
+    for t in types:
+        print(Fore.CYAN + f"\n{t.capitalize()}s:")
+        if t in equipped:
+            print(Fore.YELLOW + f"  Equipped: {equipped[t]['name']} ({equipped[t]['effect']})")
+        for i, item in enumerate(grouped[t]):
+            print(Fore.WHITE + f"  [{i+1}] {item['name']} - {item['effect']}")
+
+    print(Fore.GREEN + "\nType the item number to equip it or 'exit' to return.")
+    choice = input(Fore.GREEN + "> ").strip().lower()
+
+    if choice == "exit":
+        return
+
+    try:
+        num = int(choice)
+        count = 0
+        for t in types:
+            for item in grouped[t]:
+                count += 1
+                if count == num:
+                    # Equip item
+                    old_equipped = [e for e in player_data["equipped"] if e["type"] == item["type"]]
+                    for e in old_equipped:
+                        player_data["equipped"].remove(e)
+                    player_data["equipped"].append(item)
+                    print(Fore.YELLOW + f"Equipped {item['name']}")
+                    apply_equipment_bonuses()
+                    save_to_file()
+                    return
+        print(Fore.RED + "Invalid number.")
+    except:
+        print(Fore.RED + "Invalid input.")
+    press_enter()
 
 def open_upgrade_menu():
     while True:
@@ -253,20 +332,83 @@ def open_upgrade_menu():
             continue
         player_data["skill_points"] -= 1
 
+def open_shop():
+    clear_screen()
+    print(Fore.BLUE + "--- Merchant's Shop ---")
+    print(f"You have {Fore.YELLOW}{player_data['coins']} coins{Style.RESET_ALL}\n")
+
+    # Pick 3 random items
+    shop_items = random.choices(drop_table, weights=[i["weight"] for i in drop_table], k=3)
+
+    # 25% chance to add a skill
+    skill_offer = None
+    if random.random() < 0.25:
+        skill_offer = random.choice(skill_table)
+
+    while True:
+        print(Fore.GREEN + "Items for sale:")
+        for idx, item in enumerate(shop_items):
+            print(f"  [{idx+1}] {item['name']} - {item['effect']} - {item['value']} coins")
+
+        if skill_offer:
+            print(Fore.MAGENTA + f"  [S] {skill_offer['name']} (Skill) - {20 + (10 - skill_offer['weight']) * 3} coins")
+
+        print(Fore.CYAN + "  [E] Exit shop")
+        choice = input(Fore.GREEN + "> ").strip().lower()
+
+        if choice == "e":
+            print(Fore.YELLOW + "You leave the shop.")
+            return
+
+        if choice in ["s"] and skill_offer:
+            price = 20 + (10 - skill_offer["weight"]) * 3
+            if player_data["coins"] >= price:
+                if skill_offer["name"] in player_data["skills"]:
+                    print(Fore.RED + "You already know that skill.")
+                else:
+                    player_data["coins"] -= price
+                    player_data["skills"].append(skill_offer["name"])
+                    sd = player_data["skill_data"]
+                    sd.setdefault("damage", []).append(skill_offer["damage"])
+                    sd.setdefault("attacks", []).append(skill_offer["attacks"])
+                    sd.setdefault("healing", []).append(skill_offer["healing"])
+                    sd.setdefault("mana_costs", []).append(skill_offer["mana_cost"])
+                    print(Fore.MAGENTA + f"You learned {skill_offer['name']}!")
+            else:
+                print(Fore.RED + "Not enough coins.")
+            continue
+
+        try:
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(shop_items):
+                raise ValueError
+            item = shop_items[idx]
+            if player_data["coins"] >= item["value"]:
+                player_data["coins"] -= item["value"]
+                player_data["inventory"].append(item)
+                print(Fore.YELLOW + f"Purchased {item['name']}")
+            else:
+                print(Fore.RED + "Not enough coins.")
+        except:
+            print(Fore.RED + "Invalid choice.")
+
+
 def generate_monster_group():
     group = [random.choice(monster_list).copy()]
-    while len(group) < 5 and random.random() < 0.3:
+
+    if random.random() < 0.30:
         group.append(random.choice(monster_list).copy())
+        if random.random() < 0.15:
+            group.append(random.choice(monster_list).copy())
+            if random.random() < 0.10:
+                group.append(random.choice(monster_list).copy())
+                if random.random() < 0.05:
+                    group.append(random.choice(monster_list).copy())
+
     for m in group:
         m["max_health"] = m["health"]
-    return group
 
-#def get_monster_group(floor):
-#    index = (floor - 1) * 3
-#    group = monster_list[index:index + 3]
-#    if len(group) < 3:
-#        group = (monster_list * 3)[index:index + 3]
-#    return group
+    return group
 
 def get_boss(floor):
     index = floor * 3
@@ -298,7 +440,7 @@ def combat(player_data, monsters):
                 print(Fore.RED + f"[{idx+1}] {m['name']} HP: {m['health']} / {m['max_health']}")
                 print(bar)
 
-        print(Fore.GREEN + "\n[1] Attack  [2] Use Skill  [3] Retreat  [4] Upgrade Menu  [5] Exit Game")
+        print(Fore.GREEN + "\n[1] Attack  [2] Use Skill  [3] Retreat  [4] Upgrade Menu  [5] Equipment  [6] Exit Game")
         action = input(Fore.GREEN + "> ").strip().lower()
 
         if action in ["1", "atk", "attack"]:
@@ -330,36 +472,53 @@ def combat(player_data, monsters):
                 continue
             for i, skill in enumerate(skills):
                 print(f"  [{i + 1}] {skill} - Mana Cost: {player_data['skill_data']['mana_costs'][i]}")
+            print(Fore.CYAN + "Type a number to use a skill or type 'cancel' to go back.")
+            skill_choice = input(Fore.GREEN + "> ").strip().lower()
+
+            if skill_choice in ["cancel", "exit", "back"]:
+                continue
+
             try:
-                idx = int(input("> ")) - 1
+                idx = int(skill_choice) - 1
                 if idx < 0 or idx >= len(skills):
                     raise ValueError
                 skill_name = skills[idx]
                 sd = player_data["skill_data"]
                 cost = sd["mana_costs"][idx]
+
                 if player_data["mana"] < cost:
                     print(Fore.RED + "Not enough mana.")
                     time.sleep(0.5)
                     continue
+
+                # Now consume mana only after this point
+                targets = [i for i, m in enumerate(monsters) if m["health"] > 0]
+                if not targets:
+                    print(Fore.YELLOW + "No valid targets.")
+                    continue
+
                 player_data["mana"] -= cost
                 attacks = sd["attacks"][idx]
                 dmg_str = sd["damage"][idx]
 
                 if attacks == 1:
-                    # Single target skill
-                    targets = [i for i, m in enumerate(monsters) if m["health"] > 0]
                     print("Choose target:")
                     for i in targets:
-                        print(f"  [{i+1}] {monsters[i]['name']} ({monsters[i]['health']} HP)")
-                    target_idx = int(input("> ")) - 1
-                    if target_idx not in targets:
-                        print("Invalid target.")
+                        print(f"  [{i + 1}] {monsters[i]['name']} ({monsters[i]['health']} HP)")
+                    try:
+                        target_idx = int(input("> ")) - 1
+                        if target_idx not in targets:
+                            print(Fore.RED + "Invalid target.")
+                            player_data["mana"] += cost  # Refund mana
+                            continue
+                        dmg = roll_dice(dmg_str)
+                        monsters[target_idx]["health"] -= dmg
+                        print(Fore.MAGENTA + f"{skill_name} hits {monsters[target_idx]['name']} for {dmg} damage.")
+                    except:
+                        print(Fore.RED + "Skill cancelled.")
+                        player_data["mana"] += cost
                         continue
-                    dmg = roll_dice(dmg_str)
-                    monsters[target_idx]["health"] -= dmg
-                    print(Fore.MAGENTA + f"{skill_name} hits {monsters[target_idx]['name']} for {dmg} damage.")
                 else:
-                    # Multi-target skill hits randomly
                     for _ in range(attacks):
                         valid_targets = [m for m in monsters if m["health"] > 0]
                         if not valid_targets:
@@ -375,7 +534,7 @@ def combat(player_data, monsters):
                     player_data["health"] = min(player_data["health"] + heal, player_data["max_health"])
                     print(Fore.CYAN + f"You heal for {heal} HP.")
             except:
-                print(Fore.RED + "Skill failed.")
+                print(Fore.RED + "Skill failed or canceled.")
                 time.sleep(0.5)
                 continue
 
@@ -387,7 +546,11 @@ def combat(player_data, monsters):
             open_upgrade_menu()
             continue
 
-        elif action in ["5", "exit", "leave"]:
+        elif action in ["5", "inventory", "inv"]:
+            open_inventory_menu()
+            continue
+
+        elif action in ["6", "exit", "leave"]:
             print(Fore.YELLOW + "Exiting to main menu...")
             save_to_file()
             time.sleep(0.5)
@@ -405,7 +568,7 @@ def combat(player_data, monsters):
                 player_data["health"] -= m["damage"]
                 print(Fore.RED + f"{m['name']} hits you for {m['damage']}")
         save_to_file()
-        time.sleep(0.5)
+        time.sleep(1)
 
     if player_data["health"] <= 0:
         print(Fore.RED + "You have died.")
@@ -419,7 +582,12 @@ def combat(player_data, monsters):
         current_monster_group = None
         persistent_stats["current_monsters"] = None
         save_to_file()
-
+        # Calculate coin reward
+        coin_total = sum((m["damage"] + m["health"] // 2) for m in monsters)
+        coin_reward = int(random.uniform(0.75, 1.25) * coin_total)
+        player_data["coins"] += coin_reward
+        print(Fore.YELLOW + f"You found {coin_reward} coins!")
+        # Grant Xp
         xp_total = sum((m["damage"] * 2 + 2) for m in monsters)
         gain_xp(int(xp_total * 1.5))
         press_enter()
@@ -430,7 +598,7 @@ def explore_floor():
     floor = persistent_stats["floor"]
     room = persistent_stats["room"]
 
-    # Handle active combat if it exists
+    # Handle active combat if it exists (from a saved battle)
     if current_monster_group is not None:
         result = combat(player_data, current_monster_group)
         if result == "exit":
@@ -442,11 +610,20 @@ def explore_floor():
             print("You retreated.")
             return True
 
-    # Regular rooms
+    # Regular rooms (10 per floor)
     for _ in range(10):
         persistent_stats["room"] += 1
+
+        # 10% chance of entering a shop instead of combat
+        if random.random() < 0.10:
+            open_shop()
+            save_to_file()
+            continue  # Do not increment combat or monster
+
+        # Generate new monster group and fight
         current_monster_group = generate_monster_group()
         result = combat(player_data, current_monster_group)
+
         if result == "exit":
             return "exit"
         elif result is False:
@@ -455,6 +632,8 @@ def explore_floor():
         elif result is None:
             print("You retreated.")
             return True
+
+        # Clear monster state after successful combat
         current_monster_group = None
         persistent_stats["current_monsters"] = None
         save_to_file()
@@ -463,14 +642,16 @@ def explore_floor():
     boss = get_boss(floor).copy()
     boss["max_health"] = boss["health"]
     current_monster_group = [boss]
-    result = combat(player_data, current_monster_group)
     print(f"Boss Encounter! {boss['name']}")
+    result = combat(player_data, current_monster_group)
+
     if result == "exit":
         return "exit"
     elif result is False:
         print("You died to the boss...")
         return False
 
+    # Clean up after boss
     current_monster_group = None
     persistent_stats["current_monsters"] = None
     save_to_file()
@@ -480,6 +661,7 @@ def explore_floor():
     with open(backup_path, "w") as f:
         json.dump({"player": player_data, "persistent_stats": persistent_stats}, f, indent=4)
 
+    # Floor complete
     rotate_monsters()
     persistent_stats["floor"] += 1
     persistent_stats["room"] = 1
@@ -509,7 +691,14 @@ def startup():
                     save_path = os.path.join(save_directory, f"{name}.json")
                     if os.path.exists(save_path):
                         os.remove(save_path)
-                print(Fore.GREEN + "All saves deleted.")
+                # Clear persistent monster group and stats
+                global current_monster_group
+                current_monster_group = None
+                persistent_stats["current_monsters"] = None
+                persistent_stats["floor"] = 1
+                persistent_stats["room"] = 1
+                persistent_stats["is_dead"] = False
+                print(Fore.GREEN + "All save data deleted.")
                 time.sleep(1)
                 clear_screen()
                 continue
@@ -562,6 +751,7 @@ def startup():
                     "floor": 1,
                     "room": 1,
                 })
+                apply_equipment_bonuses()
                 save_to_file()
             break
         else:
