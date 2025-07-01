@@ -201,16 +201,23 @@ def apply_equipment_bonuses():
 def gain_xp(amount):
     player_data["xp"] += amount
     print(Fore.CYAN + f"You gained {amount} XP!")
+
     while player_data["xp"] >= player_data["xp_to_next"]:
         player_data["xp"] -= player_data["xp_to_next"]
         player_data["level"] += 1
-        player_data["skill_points"] += 1
+
+        floor = persistent_stats.get("floor", 1)
+        earned_points = max(1, floor)  # guarantees at least 1
+        player_data["skill_points"] += earned_points
+
         player_data["xp_to_next"] = int(player_data["xp_to_next"] * 1.5)
+
         # Scale and restore mana
         player_data["max_mana"] = int(player_data["max_mana"] * 1.2)
         player_data["mana"] = player_data["max_mana"]
+
         print(Fore.YELLOW + f"Level up! Now level {player_data['level']}")
-        print(Fore.MAGENTA + f"Skill point earned! Total: {player_data['skill_points']}")
+        print(Fore.MAGENTA + f"+{earned_points} Skill Point{'s' if earned_points > 1 else ''}! Total: {player_data['skill_points']}")
         print(Fore.BLUE + f"Max mana increased to {player_data['max_mana']} and restored to full!")
 
 def open_treasure_room():
@@ -375,7 +382,8 @@ def open_upgrade_menu():
             print("choose skill:")
             for i, skill in enumerate(skills):
                 cost = player_data["skill_upgrade_costs"][i]
-                print(f"  [{i+1}] {skill} (cost: {cost})")
+                color = Fore.GREEN if player_data["skill_points"] >= cost else Fore.RED
+                print(f"{color}  [{i + 1}] {skill} (cost: {cost})")
 
             try:
                 idx = int(input("> ")) - 1
@@ -572,25 +580,30 @@ def combat(player_data, monsters):
 
         if action in ["1", "atk", "attack"]:
             targets = [i for i, m in enumerate(monsters) if m["health"] > 0]
-            print("Choose target:")
-            for i in targets:
-                print(Fore.RED + f"  [{i + 1}] {monsters[i]['name']} ({monsters[i]['health']} HP)")
-            try:
-                choice = int(input("> ")) - 1
-                if choice not in targets:
-                    print(Fore.RED + "Invalid target.")
+
+            if len(targets) == 1:
+                choice = targets[0]
+            else:
+                print("Choose target:")
+                for i in targets:
+                    print(Fore.RED + f"  [{i + 1}] {monsters[i]['name']} ({monsters[i]['health']} HP)")
+                try:
+                    choice = int(input("> ")) - 1
+                    if choice not in targets:
+                        print(Fore.RED + "Invalid target.")
+                        time.sleep(0.5)
+                        continue
+                except:
+                    print(Fore.RED + "Invalid input.")
                     time.sleep(0.5)
                     continue
-                dmg = sum(random.randint(1, 2) for _ in range(player_data.get("damage", 1))) # Roll a bunch of d2's
-                dmg = int(dmg * random.uniform(0.9, 1.2)) # then randomize it even more!
-                monsters[choice]["health"] -= dmg
-                print(Fore.GREEN + f"You dealt {dmg} damage to {monsters[choice]['name']}.")
-                restore_amount = max(1, player_data["max_mana"] // 10)
-                player_data["mana"] = min(player_data["mana"] + restore_amount, player_data["max_mana"])
-            except:
-                print(Fore.RED + "Invalid input.")
-                time.sleep(0.5)
-                continue
+
+            dmg = sum(random.randint(1, 2) for _ in range(player_data.get("damage", 1)))  # Roll a bunch of d2's
+            dmg = int(dmg * random.uniform(0.9, 1.2))  # then randomize it even more!
+            monsters[choice]["health"] -= dmg
+            print(Fore.GREEN + f"You dealt {dmg} damage to {monsters[choice]['name']}.")
+            restore_amount = max(1, player_data["max_mana"] // 10)
+            player_data["mana"] = min(player_data["mana"] + restore_amount, player_data["max_mana"])
 
         elif action in ["2", "skill", "useskill", "skl"]:
             skills = player_data.get("skills", [])
