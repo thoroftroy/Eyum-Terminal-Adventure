@@ -73,6 +73,13 @@ global_save_path = ''
 current_monster_group = None  # global variable for active encounter
 
 # === Utility Functions ===
+def rainbow_text(text):
+    colors = [Fore.RED, Fore.YELLOW, Fore.GREEN, Fore.CYAN, Fore.BLUE, Fore.MAGENTA]
+    output = ""
+    for i, char in enumerate(text):
+        output += colors[i % len(colors)] + char
+    return output + Style.RESET_ALL
+
 def get_unique_items(owned, count):
     available = [item for item in drop_table if item["name"] not in owned]
     return random.sample(available, min(count, len(available)))
@@ -185,20 +192,28 @@ def apply_equipment_bonuses():
 
     for item in player_data.get("equipped", []):
         effect = item.get("effect", "").lower()
+
+        # Parse all numeric bonuses
         if "+1 damage" in effect:
             player_data["damage"] += 1
-        elif "+3 damage" in effect:
+        if "+3 damage" in effect:
             player_data["damage"] += 3
-        elif "+2 mana" in effect:
+        if "+2 mana" in effect or "+2 mp" in effect:
             player_data["max_mana"] += 2
-        elif "restore" in effect:
-            continue
-        elif "+2 dodge" in effect:
-            pass
-        elif "+5 all stats" in effect:
+        if "+5 max mana" in effect:
+            player_data["max_mana"] += 5
+        if "+2 health" in effect or "+2 hp" in effect:
+            player_data["max_health"] += 2
+        if "+5 max health" in effect:
+            player_data["max_health"] += 5
+        if "+5 all stats" in effect:
             player_data["damage"] += 5
             player_data["max_health"] += 5
             player_data["max_mana"] += 5
+
+    # Clamp current values if they're over new maxes
+    player_data["health"] = min(player_data["health"], player_data["max_health"])
+    player_data["mana"] = min(player_data["mana"], player_data["max_mana"])
 
 def gain_xp(amount):
     player_data["xp"] += amount
@@ -214,13 +229,16 @@ def gain_xp(amount):
 
         player_data["xp_to_next"] = int(player_data["xp_to_next"] * 1.5)
 
-        # Scale and restore mana
+        # Scale and restore mana and health
         player_data["max_mana"] = int(player_data["max_mana"] * 1.2)
         player_data["mana"] = player_data["max_mana"]
 
+        player_data["max_health"] = int(player_data["max_health"] * 1.2)
+        player_data["health"] = player_data["max_health"]
+
         print(Fore.YELLOW + f"Level up! Now level {player_data['level']}")
         print(Fore.MAGENTA + f"+{earned_points} Skill Point{'s' if earned_points > 1 else ''}! Total: {player_data['skill_points']}")
-        print(Fore.BLUE + f"Max mana increased to {player_data['max_mana']} and restored to full!")
+        print(Fore.BLUE + f"Stats restored to full!")
 
 def open_treasure_room():
     persistent_stats["rooms_since_treasure"] = 0
@@ -470,6 +488,7 @@ def open_shop():
     while True:
         clear_screen()
         print(Fore.BLUE + "--- Merchant's Shop ---")
+        print(Fore.MAGENTA + f"You can buy {Fore.RED}1{Fore.MAGENTA} item, choose wisely")
         print(f"You have {Fore.YELLOW}{player_data['coins']} coins{Style.RESET_ALL}\n")
         print(Fore.GREEN + "Items for sale:")
         for idx, item in enumerate(shop_items):
@@ -778,6 +797,43 @@ def explore_floor():
     floor = persistent_stats["floor"]
     room = persistent_stats["room"]
 
+    # === Forced boss fight if room exceeds 10 ===
+    if room > 10:
+        print(Fore.RED + "You have lingered too long... A powerful presence approaches.")
+        boss = get_boss(floor).copy()
+        boss["max_health"] = boss["health"]
+        current_monster_group = [boss]
+        clear_screen()
+        print(Fore.RED + Style.BRIGHT + "\n" + "=" * 50)
+        print(Fore.MAGENTA + Style.BRIGHT + "!!! FORCED BOSS ENCOUNTER !!!".center(50))
+        print("=" * 50)
+        print("\n" + rainbow_text(boss["name"].center(50)))
+        print("=" * 50 + "\n")
+        time.sleep(5)
+        result = combat(player_data, current_monster_group)
+
+        if result == "exit":
+            return "exit"
+        elif result is False:
+            print("You died to the boss...")
+            return False
+
+        print(Fore.GREEN + Style.BRIGHT + "\n=== BOSS DEFEATED! FLOOR COMPLETE! ===")
+        time.sleep(1)
+        persistent_stats["room"] = 1
+        persistent_stats["floor"] += 1
+        rotate_monsters()
+
+        current_monster_group = None
+        persistent_stats["current_monsters"] = None
+
+        save_to_file()
+        backup_path = global_save_path.replace(".json", f"_backup_floor{floor}.json")
+        with open(backup_path, "w") as f:
+            json.dump({"player": player_data, "persistent_stats": persistent_stats}, f, indent=4)
+
+        return True
+
     # Handle active combat if it exists (from a saved battle)
     if current_monster_group is not None:
         result = combat(player_data, current_monster_group)
@@ -838,7 +894,13 @@ def explore_floor():
     boss = get_boss(floor).copy()
     boss["max_health"] = boss["health"]
     current_monster_group = [boss]
-    print(f"Boss Encounter! {boss['name']}")
+    clear_screen()
+    print(Fore.RED + Style.BRIGHT + "\n" + "=" * 50)
+    print(Fore.MAGENTA + Style.BRIGHT + "!!! BOSS ENCOUNTER !!!".center(50))
+    print("=" * 50)
+    print("\n" + rainbow_text(boss["name"].center(50)))
+    print("=" * 50 + "\n")
+    time.sleep(2)
     result = combat(player_data, current_monster_group)
 
     if result == "exit":
@@ -847,20 +909,23 @@ def explore_floor():
         print("You died to the boss...")
         return False
 
-    # Clean up after boss
+    # Boss defeated — reset room, advance floor, rotate monsters
+    print(Fore.GREEN + Style.BRIGHT + "\n=== BOSS DEFEATED! FLOOR COMPLETE! ===")
+    time.sleep(1)
+    persistent_stats["room"] = 1
+    persistent_stats["floor"] += 1
+    rotate_monsters()
+
+    # Clear any remaining monster state
     current_monster_group = None
     persistent_stats["current_monsters"] = None
-    save_to_file()
 
-    # Backup save
+    # Save and backup
+    save_to_file()
     backup_path = global_save_path.replace(".json", f"_backup_floor{floor}.json")
     with open(backup_path, "w") as f:
         json.dump({"player": player_data, "persistent_stats": persistent_stats}, f, indent=4)
 
-    # Floor complete
-    rotate_monsters()
-    persistent_stats["floor"] += 1
-    persistent_stats["room"] = 1
     return True
 
 def main():
@@ -973,11 +1038,14 @@ if __name__ == "__main__":
         result = startup()
         if result == "exit":
             break
-        alive = main()
-        if alive == "exit":
-            print(Fore.YELLOW + "Returning to character select...")
-            time.sleep(1.5)
-        elif not alive:
-            print(Fore.YELLOW + "Returning to character select...")
-            time.sleep(1.5)
-
+        while True:
+            alive = main()
+            if alive == "exit":
+                print(Fore.YELLOW + "Returning to character select...")
+                time.sleep(1.5)
+                break  # Break inner loop, go to character select
+            elif not alive:
+                print(Fore.YELLOW + "Returning to character select...")
+                time.sleep(1.5)
+                break  # Break inner loop, go to character select
+            # Otherwise continue exploring with the same character
