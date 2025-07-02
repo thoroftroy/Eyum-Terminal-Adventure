@@ -75,19 +75,18 @@ current_monster_group = None  # global variable for active encounter
 
 # === Utility Functions ===
 def recalculate_all_stats(pdata):
-    base = pdata.get("base_stats", {"damage": 1, "max_health": 25, "max_mana": 7})
+    # If base_stats is missing, initialize it from current values
+    if "base_stats" not in pdata:
+        pdata["base_stats"] = {
+            "damage": pdata.get("damage", 1),
+            "max_health": pdata.get("max_health", 25),
+            "max_mana": pdata.get("max_mana", 7)
+        }
+
+    base = pdata["base_stats"]
     pdata["damage"] = base["damage"]
     pdata["max_health"] = base["max_health"]
     pdata["max_mana"] = base["max_mana"]
-
-    for eq in pdata.get("equipped", []):
-        bonus = eq.get("bonus", {})
-        pdata["damage"] += bonus.get("damage", 0)
-        pdata["max_health"] += bonus.get("max_health", 0)
-        pdata["max_mana"] += bonus.get("max_mana", 0)
-
-    pdata["health"] = min(pdata["health"], pdata["max_health"])
-    pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
 
 def rainbow_text(text):
     colors = [Fore.RED, Fore.YELLOW, Fore.GREEN, Fore.CYAN, Fore.BLUE, Fore.MAGENTA]
@@ -189,7 +188,11 @@ def load_from_file(filename):
             print(Fore.RED + "Version mismatch!")
             press_enter()
         current_monster_group = persistent_stats.get("current_monsters", None)
-        apply_equipment_bonuses()
+        # Ensure all equipped items have parsed bonuses
+        for item in player_data.get("equipped", []):
+            if "bonus" not in item and "effect" in item:
+                convert_effect_string_to_bonus(item)
+        apply_equipment_bonuses_for(player_data)
         return True
     except Exception as e:
         print(Fore.RED + f"Error loading save: {e}")
@@ -224,29 +227,31 @@ def convert_effect_string_to_bonus(item):
     item["bonus"] = bonuses
     return item
 
-def apply_equipment_bonuses():
-    base = player_data.get("base_stats", {
+def apply_equipment_bonuses_for(pdata):
+    """
+    Applies equipment bonuses to a given player data dict.
+    Recalculates from base stats and applies bonuses from all equipped items.
+    """
+    base = pdata.get("base_stats", {
         "damage": 1,
         "max_health": 25,
         "max_mana": 7,
     })
-    player_data["damage"] = base["damage"]
-    player_data["max_health"] = base["max_health"]
-    player_data["max_mana"] = base["max_mana"]
 
-    for item in player_data.get("equipped", []):
-        # If item uses old string format, convert it live
+    pdata["damage"] = base["damage"]
+    pdata["max_health"] = base["max_health"]
+    pdata["max_mana"] = base["max_mana"]
+
+    for item in pdata.get("equipped", []):
         if "bonus" not in item and "effect" in item:
             item = convert_effect_string_to_bonus(item)
-
         bonus = item.get("bonus", {})
-        player_data["damage"] += bonus.get("damage", 0)
-        player_data["max_health"] += bonus.get("max_health", 0)
-        player_data["max_mana"] += bonus.get("max_mana", 0)
+        pdata["damage"] += bonus.get("damage", 0)
+        pdata["max_health"] += bonus.get("max_health", 0)
+        pdata["max_mana"] += bonus.get("max_mana", 0)
 
-    # Clamp current values if they're over new maxes
-    player_data["health"] = min(player_data["health"], player_data["max_health"])
-    player_data["mana"] = min(player_data["mana"], player_data["max_mana"])
+    pdata["health"] = min(pdata["health"], pdata["max_health"])
+    pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
 
 def gain_xp(amount):
     player_data["xp"] += amount
@@ -278,6 +283,57 @@ def gain_xp(amount):
         print(Fore.YELLOW + f"Level up! Now level {player_data['level']}")
         print(Fore.MAGENTA + f"+{earned_points} Skill Point{'s' if earned_points > 1 else ''}! Total: {player_data['skill_points']}")
         print(Fore.BLUE + f"Stats restored to full!")
+
+def reset_game_state():
+    """
+    Fully clears and resets all runtime globals and deletes all character save files.
+    """
+    global player_data, persistent_stats, current_monster_group
+
+    for name in characters:
+        path = os.path.join(save_directory, f"{name}.json")
+        if os.path.exists(path):
+            os.remove(path)
+
+    player_data.clear()
+    player_data.update({
+        "character": "none",
+        "level": 1,
+        "max_health": 25,
+        "health": 25,
+        "mana": 7,
+        "max_mana": 7,
+        "damage": 1,
+        "coins": 0,
+        "xp": 0,
+        "xp_to_next": 10,
+        "skill_points": 0,
+        "skills": [],
+        "skill_data": {},
+        "learned_skills": {},
+        "inventory": [],
+        "equipped": [],
+        "upgrade_costs": {
+            "max_health": 1,
+            "max_mana": 1,
+            "damage": 1,
+        },
+        "skill_upgrade_costs": [],
+    })
+
+    persistent_stats.clear()
+    persistent_stats.update({
+        "current_version": current_version,
+        "is_dead": False,
+        "floor": 1,
+        "room": 1,
+        "current_monsters": None,
+        "rooms_since_shop": 0,
+        "rooms_since_treasure": 0,
+        "monster_rotation_index": 0,
+    })
+
+    current_monster_group = None
 
 def open_treasure_room():
     persistent_stats["rooms_since_treasure"] = 0
@@ -415,12 +471,16 @@ def open_inventory_menu():
 
             if pdata["character"] == player_data["character"]:
                 player_data.update(pdata)
-                apply_equipment_bonuses()
+                if "bonus" not in item and "effect" in item:
+                    convert_effect_string_to_bonus(item)
+                apply_equipment_bonuses_for(player_data)
 
             # Also update in-memory player_data if this is the active character
             if pdata["character"] == player_data["character"]:
                 player_data.update(pdata)
-                apply_equipment_bonuses()
+                if "bonus" not in item and "effect" in item:
+                    convert_effect_string_to_bonus(item)
+                apply_equipment_bonuses_for(player_data)
 
             with open(path, "w") as f:
                 json.dump(data, f, indent=4)
@@ -444,13 +504,22 @@ def open_inventory_menu():
         for e in old_equipped:
             pdata["equipped"].remove(e)
 
-        # Equip new item
         pdata["equipped"].append(item)
+        if "bonus" not in item and "effect" in item:
+            convert_effect_string_to_bonus(item)
 
-        recalculate_all_stats(pdata)
+        apply_equipment_bonuses_for(pdata)
 
+        # Clamp health/mana
         pdata["health"] = min(pdata["health"], pdata["max_health"])
         pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
+
+        # Update runtime player if it's the current character
+        if pdata["character"] == player_data["character"]:
+            player_data.update(pdata)
+
+        # CRITICAL: save changes back into data
+        data["player"] = pdata
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
 
@@ -460,7 +529,6 @@ def open_inventory_menu():
         print(Fore.RED + "Invalid input.")
         time.sleep(0.5)
         return open_inventory_menu()
-
 
 def open_upgrade_menu():
     # initialize upgrade cost trackers if not present
@@ -1268,7 +1336,7 @@ def startup():
                     "floor": 1,
                     "room": 1,
                 })
-                apply_equipment_bonuses()
+                apply_equipment_bonuses_for(player_data)
                 save_to_file()
         list_saved_files()
         choice = input(Fore.GREEN + "> ").strip().capitalize()
@@ -1281,59 +1349,9 @@ def startup():
             confirm = input(
                 Fore.RED + "Are you sure? This will delete all character saves. Type 'yes' to confirm: ").strip().lower()
             if confirm == "yes":
-                for name in characters:
-                    save_path = os.path.join(save_directory, f"{name}.json")
-                    if os.path.exists(save_path):
-                        os.remove(save_path)
-                    # Reset runtime globals too
-                    player_data.clear()
-                    player_data.update({
-                        "character": "none",
-                        "level": 1,
-                        "max_health": 25,
-                        "health": 25,
-                        "mana": 7,
-                        "max_mana": 7,
-                        "damage": 1,
-                        "coins": 0,
-                        "xp": 0,
-                        "xp_to_next": 10,
-                        "skill_points": 0,
-                        "skills": [],
-                        "skill_data": {},
-                        "learned_skills": {},
-                        "inventory": [],
-                        "equipped": [],
-                        "upgrade_costs": {
-                            "max_health": 1,
-                            "max_mana": 1,
-                            "damage": 1
-                        },
-                        "skill_upgrade_costs": []
-                    })
-
-                    persistent_stats.clear()
-                    persistent_stats.update({
-                        "current_version": current_version,
-                        "is_dead": False,
-                        "floor": 1,
-                        "room": 1,
-                        "current_monsters": None,
-                        "rooms_since_shop": 0,
-                        "rooms_since_treasure": 0,
-                        "monster_rotation_index": 0,
-                    })
-                # Reset persistent data
-                current_monster_group = None
-                persistent_stats.update({
-                    "current_monsters": None,
-                    "floor": 1,
-                    "room": 1,
-                    "is_dead": False
-                })
+                reset_game_state()
                 print(Fore.GREEN + "All save data deleted. Reinitializing...")
                 time.sleep(1)
-                # Recreate fresh saves automatically
                 return startup()
             else:
                 print("Reset cancelled.")
@@ -1398,7 +1416,7 @@ def startup():
                     "floor": 1,
                     "room": 1,
                 })
-                apply_equipment_bonuses()
+                apply_equipment_bonuses_for(player_data)
                 save_to_file()
             break
         else:
