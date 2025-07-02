@@ -41,6 +41,7 @@ persistent_stats = {
     "current_monsters": None,
     "rooms_since_shop": 0,
     "rooms_since_treasure": 0,
+    "monster_rotation_index": 0,
 }
 
 character_skills = {
@@ -49,21 +50,21 @@ character_skills = {
         "damage": ["1d4","2d8"],
         "attacks": [2, 1],
         "healing": [0, 0],
-        "mana_costs": [3, 7],
+        "mana_costs": [4, 8],
     },
     "Ilana": {
         "skills": ["Necro Blast", "Life Drain"],
         "damage": ["1d4", "1d4"],
         "attacks": [1, 2],
         "healing": [2, 4],
-        "mana_costs": [2, 6],
+        "mana_costs": [3, 6],
     },
     "George": {
         "skills": ["Sword Slash", "Sword Burst"],
         "damage": ["1d6", "1d4"],
         "attacks": [2, 4],
         "healing": [0, 0],
-        "mana_costs": [2, 7],
+        "mana_costs": [3, 8],
     },
 }
 
@@ -73,6 +74,21 @@ global_save_path = ''
 current_monster_group = None  # global variable for active encounter
 
 # === Utility Functions ===
+def recalculate_all_stats(pdata):
+    base = pdata.get("base_stats", {"damage": 1, "max_health": 25, "max_mana": 7})
+    pdata["damage"] = base["damage"]
+    pdata["max_health"] = base["max_health"]
+    pdata["max_mana"] = base["max_mana"]
+
+    for eq in pdata.get("equipped", []):
+        bonus = eq.get("bonus", {})
+        pdata["damage"] += bonus.get("damage", 0)
+        pdata["max_health"] += bonus.get("max_health", 0)
+        pdata["max_mana"] += bonus.get("max_mana", 0)
+
+    pdata["health"] = min(pdata["health"], pdata["max_health"])
+    pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
+
 def rainbow_text(text):
     colors = [Fore.RED, Fore.YELLOW, Fore.GREEN, Fore.CYAN, Fore.BLUE, Fore.MAGENTA]
     output = ""
@@ -173,6 +189,7 @@ def load_from_file(filename):
             print(Fore.RED + "Version mismatch!")
             press_enter()
         current_monster_group = persistent_stats.get("current_monsters", None)
+        apply_equipment_bonuses()
         return True
     except Exception as e:
         print(Fore.RED + f"Error loading save: {e}")
@@ -249,8 +266,14 @@ def gain_xp(amount):
         player_data["max_mana"] = int(player_data["max_mana"] * 1.2)
         player_data["mana"] = player_data["max_mana"]
 
-        player_data["max_health"] = int(player_data["max_health"] * 1.2)
+        player_data["max_health"] = int(player_data["max_health"] * 1.1)
         player_data["health"] = player_data["max_health"]
+
+        player_data["base_stats"] = {
+            "damage": player_data["damage"],
+            "max_health": player_data["max_health"],
+            "max_mana": player_data["max_mana"],
+        }
 
         print(Fore.YELLOW + f"Level up! Now level {player_data['level']}")
         print(Fore.MAGENTA + f"+{earned_points} Skill Point{'s' if earned_points > 1 else ''}! Total: {player_data['skill_points']}")
@@ -259,10 +282,16 @@ def gain_xp(amount):
 def open_treasure_room():
     persistent_stats["rooms_since_treasure"] = 0
     clear_screen()
-    print(Fore.YELLOW + "--- Treasure Room ---")
+
+    print(Fore.YELLOW + Style.BRIGHT + "\n" + "=" * 50)
+    print(Fore.CYAN + Style.BRIGHT + "+++ TREASURE ROOM +++".center(50))
+    print("=" * 50 + "\n")
+    time.sleep(1)
+
     coin_reward = random.randint(40, 80)
     player_data["coins"] += coin_reward
-    print(Fore.YELLOW + f"You found a stash of {coin_reward} coins!")
+    print(Fore.YELLOW + f"You found a stash of {coin_reward} coins!".center(50))
+    time.sleep(1)
 
     # 25% chance of item
     if random.random() < 0.25:
@@ -271,7 +300,19 @@ def open_treasure_room():
         if unique_items:
             item = unique_items[0]
             player_data["inventory"].append(item)
-            print(Fore.GREEN + f"You also found an item: {item['name']} ({item['effect']})")
+            bonus = item.get("bonus", {})
+            parts = []
+            if bonus.get("damage"):
+                parts.append(f"+{bonus['damage']} dmg")
+            if bonus.get("max_health"):
+                parts.append(f"+{bonus['max_health']} HP")
+            if bonus.get("max_mana"):
+                parts.append(f"+{bonus['max_mana']} MP")
+            if item.get("restore_full"):
+                parts.append("Restores Full HP/MP")
+            effect = ", ".join(parts) if parts else "No effect"
+            print(Fore.GREEN + f"You also found an item: {item['name']} ({effect})".center(50))
+            time.sleep(1)
 
     # 10% chance of skill
     if random.random() < 0.10:
@@ -283,10 +324,12 @@ def open_treasure_room():
             sd.setdefault("attacks", []).append(skill["attacks"])
             sd.setdefault("healing", []).append(skill["healing"])
             sd.setdefault("mana_costs", []).append(skill["mana_cost"])
-            print(Fore.MAGENTA + f"You discovered a rare skill: {skill['name']}!")
+            print(Fore.MAGENTA + f"You discovered a rare skill: {skill['name']}!".center(50))
         else:
-            print(Fore.MAGENTA + f"You almost found a skill... but you already knew it.")
+            print(Fore.MAGENTA + "You almost found a skill... but you already knew it.".center(50))
+        time.sleep(1)
 
+    print(Style.RESET_ALL)
     save_to_file()
     press_enter()
 
@@ -309,15 +352,43 @@ def open_inventory_menu():
             types = ["weapon", "armor", "magic", "relic", "potion"]
             print(Fore.CYAN + f"\n== {char_name}'s Inventory ==")
             for t in types:
-                print(Fore.LIGHTBLACK_EX + f"  {t.capitalize()}:")
+                print(Fore.LIGHTBLACK_EX + f"\n  {t.capitalize()}:")
+
+                # Show equipped item
                 if t in equipped:
-                    bonus = item.get("bonus", {})
-                    bonus_text = f"{bonus.get('damage', 0)} dmg, {bonus.get('max_health', 0)} HP, {bonus.get('max_mana', 0)} MP"
-                    print(Fore.YELLOW + f"    Equipped: {equipped[t]['name']} ({bonus_text})")
+                    eq = equipped[t]
+                    bonus = eq.get("bonus", {})
+                    parts = []
+                    if bonus.get("damage"):
+                        parts.append(f"+{bonus['damage']} dmg")
+                    if bonus.get("max_health"):
+                        parts.append(f"+{bonus['max_health']} HP")
+                    if bonus.get("max_mana"):
+                        parts.append(f"+{bonus['max_mana']} MP")
+                    if eq.get("restore_full"):
+                        parts.append("Restores Full HP/MP")
+                    bonus_text = ", ".join(parts) if parts else "No effect"
+                    print(Fore.YELLOW + f"    Equipped: {eq['name']}".ljust(40) + f"({bonus_text})")
+                    # Option to unequip
+                    index_map.append((char_name, {"type": t, "unequip": True}))
+                    print(Fore.LIGHTBLACK_EX + f"    [{len(index_map)}] Unequip")
+
+                # Show inventory items of same type
                 for item in inventory:
-                    if item["type"] == t:
+                    if item["type"] == t and item["name"] != equipped.get(t, {}).get("name"):
+                        bonus = item.get("bonus", {})
+                        parts = []
+                        if bonus.get("damage"):
+                            parts.append(f"+{bonus['damage']} dmg")
+                        if bonus.get("max_health"):
+                            parts.append(f"+{bonus['max_health']} HP")
+                        if bonus.get("max_mana"):
+                            parts.append(f"+{bonus['max_mana']} MP")
+                        if item.get("restore_full"):
+                            parts.append("Restores Full HP/MP")
+                        bonus_text = ", ".join(parts) if parts else "No effect"
                         index_map.append((char_name, item))
-                        print(Fore.WHITE + f"    [{len(index_map)}] {item['name']} - {bonus_text}")
+                        print(Fore.WHITE + f"    [{len(index_map)}] {item['name']}".ljust(40) + f"({bonus_text})")
         except Exception as e:
             print(Fore.RED + f"[ERROR] {char_name}: {e}")
 
@@ -330,28 +401,53 @@ def open_inventory_menu():
         if idx < 0 or idx >= len(index_map):
             raise ValueError
         char_name, item = index_map[idx]
+        unequip = item.get("unequip", False)
+        if unequip:
+            # Unequip item
+            path = os.path.join(save_directory, f"{char_name}.json")
+            with open(path, "r") as f:
+                data = json.load(f)
+            pdata = data["player"]
+
+            # Remove equipped item of that type
+            pdata["equipped"] = [e for e in pdata["equipped"] if e["type"] != item["type"]]
+            recalculate_all_stats(pdata)
+
+            if pdata["character"] == player_data["character"]:
+                player_data.update(pdata)
+                apply_equipment_bonuses()
+
+            # Also update in-memory player_data if this is the active character
+            if pdata["character"] == player_data["character"]:
+                player_data.update(pdata)
+                apply_equipment_bonuses()
+
+            with open(path, "w") as f:
+                json.dump(data, f, indent=4)
+
+            print(Fore.YELLOW + f"Unequipped {item['type']} from {char_name}.")
+            press_enter()
+            return open_inventory_menu()  # Recursively reloads the screen
         path = os.path.join(save_directory, f"{char_name}.json")
         with open(path, "r") as f:
             data = json.load(f)
         pdata = data["player"]
+
+        # Prevent equipping item if already equipped
+        if any(e["name"] == item["name"] for e in pdata.get("equipped", [])):
+            print(Fore.RED + f"{item['name']} is already equipped.")
+            press_enter()
+            return open_inventory_menu()  # Recursively reloads the screen
+
+        # Remove any equipped item of the same type
         old_equipped = [e for e in pdata["equipped"] if e["type"] == item["type"]]
         for e in old_equipped:
             pdata["equipped"].remove(e)
+
+        # Equip new item
         pdata["equipped"].append(item)
 
-        # Reapply stats
-        base = pdata.get("base_stats", {
-            "damage": 1, "max_health": 25, "max_mana": 7
-        })
-        pdata["damage"] = base["damage"]
-        pdata["max_health"] = base["max_health"]
-        pdata["max_mana"] = base["max_mana"]
-
-        for eq in pdata.get("equipped", []):
-            bonus = item.get("bonus", {})
-            player_data["damage"] += bonus.get("damage", 0)
-            player_data["max_health"] += bonus.get("max_health", 0)
-            player_data["max_mana"] += bonus.get("max_mana", 0)
+        recalculate_all_stats(pdata)
 
         pdata["health"] = min(pdata["health"], pdata["max_health"])
         pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
@@ -362,7 +458,8 @@ def open_inventory_menu():
         press_enter()
     except:
         print(Fore.RED + "Invalid input.")
-        press_enter()
+        time.sleep(0.5)
+        return open_inventory_menu()
 
 
 def open_upgrade_menu():
@@ -375,6 +472,13 @@ def open_upgrade_menu():
         }
     if "skill_upgrade_costs" not in player_data:
         player_data["skill_upgrade_costs"] = [1 for _ in player_data["skills"]]
+
+    def save_stats():
+        player_data["base_stats"] = {
+            "damage": player_data["damage"],
+            "max_health": player_data["max_health"],
+            "max_mana": player_data["max_mana"]
+        }
 
     while True:
         clear_screen()
@@ -395,7 +499,10 @@ def open_upgrade_menu():
         print(f"{mana_color}  [2] +2 Mana ({mana_cost} pts)")
         print(f"{dmg_color}  [3] +1 Base Damage ({dmg_cost} pts)")
         print(Fore.CYAN + "  [4] Upgrade Skill")
-        heal_color = Fore.GREEN if player_data["xp"] >= 1 else Fore.RED
+        floor = persistent_stats.get("floor", 1)
+        min_cost = (floor + 1) * 10
+        xp_cost = max(min_cost, int(player_data["xp"] * 0.25))
+        heal_color = Fore.GREEN if player_data["xp"] >= xp_cost else Fore.RED
         print(f"{heal_color}  [5] Heal 10% HP (costs 25% XP)")
         print(Fore.CYAN + "  [6] Exit")
 
@@ -412,6 +519,7 @@ def open_upgrade_menu():
             player_data["max_health"] += 5
             player_data["health"] += 5
             player_data["skill_points"] -= cost
+            save_stats()
             player_data["upgrade_costs"]["max_health"] = max(int(cost * 1.2), cost + 1)
 
         elif choice == "2":
@@ -423,6 +531,7 @@ def open_upgrade_menu():
             player_data["max_mana"] += 3
             player_data["mana"] += 2
             player_data["skill_points"] -= cost
+            save_stats()
             player_data["upgrade_costs"]["max_mana"] = max(int(cost * 1.2), cost + 1)
 
         elif choice == "3":
@@ -433,6 +542,7 @@ def open_upgrade_menu():
                 continue
             player_data["damage"] += 1
             player_data["skill_points"] -= cost
+            save_stats()
             player_data["upgrade_costs"]["damage"] = max(int(cost * 1.2), cost + 1)
 
         elif choice == "4":
@@ -468,6 +578,7 @@ def open_upgrade_menu():
                 player_data["skill_data"]["damage"][idx] = f"1d{new_die}"
                 player_data["skill_data"]["attacks"][idx] += 1
                 player_data["skill_points"] -= cost
+                save_stats()
                 player_data["skill_upgrade_costs"][idx] = max(cost * 2, cost + 1)
 
                 print(f"{skills[idx]} upgraded!")
@@ -537,7 +648,19 @@ def open_shop():
             price = int(item["value"] * floor_multiplier)
             affordable = player_data["coins"] >= price
             color = Fore.GREEN if affordable else Fore.RED
-            print(f"{color}  [{idx + 1}] {item['name']} ({price} coins) - {item['effect']}")
+            bonus = item.get("bonus", {})
+            bonus_parts = []
+            if bonus.get("damage"):
+                bonus_parts.append(f"+{bonus['damage']} dmg")
+            if bonus.get("max_health"):
+                bonus_parts.append(f"+{bonus['max_health']} HP")
+            if bonus.get("max_mana"):
+                bonus_parts.append(f"+{bonus['max_mana']} MP")
+            if item.get("restore_full"):
+                bonus_parts.append("Restores Full HP/MP")
+            effect = ", ".join(bonus_parts) if bonus_parts else "No effect"
+
+            print(f"{color}  [{idx + 1}] {item['name']} ({price} coins) - {effect}")
 
         if skill_offer:
             base_price = 20 + (10 - skill_offer["weight"]) * 3
@@ -596,12 +719,14 @@ def open_shop():
             time.sleep(1)
 
 def generate_monster_group():
-    floor = persistent_stats["floor"]
-    start = floor - 1
-    pool = monster_list[start:start + 3]
+    i = persistent_stats.get("monster_rotation_index", 0)
+    pool = monster_list[i:i + 3]
 
-    # Weights: newest monster = 1, older = more
-    weights = [3 * (3 - i) for i in range(len(pool))]  # [9,6,3] for 3 monsters
+    # Ensure exactly 3 entries unless list is too short
+    while len(pool) < 3 and i + len(pool) < len(monster_list):
+        pool.append(monster_list[i + len(pool)])
+
+    weights = [10, 7, 3][:len(pool)]  # Favors weakest in current pool
 
     group = [random.choices(pool, weights=weights)[0].copy()]
     if random.random() < 0.30:
@@ -619,12 +744,13 @@ def generate_monster_group():
     return group
 
 def get_boss(floor):
-    index = floor + 2  # 3 monsters in pool means next one is at +3-1 = +2
-    return monster_list[min(index, len(monster_list) - 1)]
+    i = persistent_stats.get("monster_rotation_index", 0)
+    return monster_list[min(i + 2, len(monster_list) - 1)]  # Last in current rotation
 
 def rotate_monsters():
-    if len(monster_list) > 3:
-        monster_list.append(monster_list.pop(0))
+    i = persistent_stats.get("monster_rotation_index", 0)
+    if i + 3 < len(monster_list):
+        persistent_stats["monster_rotation_index"] = i + 1
 
 def heal_other_characters(overflow_heal, exclude_name):
     for name in characters:
@@ -802,7 +928,9 @@ def combat(player_data, monsters):
                 time.sleep(0.5)
                 continue
             for i, skill in enumerate(skills):
-                print(f"  [{i + 1}] {skill} - Mana Cost: {player_data['skill_data']['mana_costs'][i]}")
+                cost = player_data["skill_data"]["mana_costs"][i]
+                color = Fore.GREEN if player_data["mana"] >= cost else Fore.RED
+                print(f"{color}  [{i + 1}] {skill} - Mana Cost: {cost}")
             print(Fore.CYAN + "Type a number to use a skill or type 'cancel' to go back.")
             skill_choice = input(Fore.GREEN + "> ").strip().lower()
 
@@ -1157,6 +1285,44 @@ def startup():
                     save_path = os.path.join(save_directory, f"{name}.json")
                     if os.path.exists(save_path):
                         os.remove(save_path)
+                    # Reset runtime globals too
+                    player_data.clear()
+                    player_data.update({
+                        "character": "none",
+                        "level": 1,
+                        "max_health": 25,
+                        "health": 25,
+                        "mana": 7,
+                        "max_mana": 7,
+                        "damage": 1,
+                        "coins": 0,
+                        "xp": 0,
+                        "xp_to_next": 10,
+                        "skill_points": 0,
+                        "skills": [],
+                        "skill_data": {},
+                        "learned_skills": {},
+                        "inventory": [],
+                        "equipped": [],
+                        "upgrade_costs": {
+                            "max_health": 1,
+                            "max_mana": 1,
+                            "damage": 1
+                        },
+                        "skill_upgrade_costs": []
+                    })
+
+                    persistent_stats.clear()
+                    persistent_stats.update({
+                        "current_version": current_version,
+                        "is_dead": False,
+                        "floor": 1,
+                        "room": 1,
+                        "current_monsters": None,
+                        "rooms_since_shop": 0,
+                        "rooms_since_treasure": 0,
+                        "monster_rotation_index": 0,
+                    })
                 # Reset persistent data
                 current_monster_group = None
                 persistent_stats.update({
