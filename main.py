@@ -375,6 +375,9 @@ def open_treasure_room():
         skill = get_unique_skill(player_data["skills"])
         if skill:
             player_data["skills"].append(skill["name"])
+            if "skill_upgrade_costs" not in player_data:
+                player_data["skill_upgrade_costs"] = []
+            player_data["skill_upgrade_costs"].append(1)
             sd = player_data["skill_data"]
             sd.setdefault("damage", []).append(skill["damage"])
             sd.setdefault("attacks", []).append(skill["attacks"])
@@ -390,6 +393,20 @@ def open_treasure_room():
     press_enter()
 
 def open_inventory_menu():
+    def remove_item_from_all_characters(item_name):
+        for name in characters:
+            path = os.path.join(save_directory, f"{name}.json")
+            if not os.path.exists(path):
+                continue
+            with open(path, "r") as f:
+                data = json.load(f)
+            pdata = data["player"]
+            pdata["inventory"] = [i for i in pdata.get("inventory", []) if i["name"] != item_name]
+            pdata["equipped"] = [i for i in pdata.get("equipped", []) if i["name"] != item_name]
+            data["player"] = pdata
+            with open(path, "w") as f:
+                json.dump(data, f, indent=4)
+
     while True:
         clear_screen()
         print(Fore.BLUE + "--- Party Inventory & Equipment ---")
@@ -411,7 +428,6 @@ def open_inventory_menu():
                 for t in types:
                     print(Fore.LIGHTBLACK_EX + f"\n  {t.capitalize()}:")
 
-                    # Show equipped item
                     if t in equipped:
                         eq = equipped[t]
                         bonus = eq.get("bonus", {})
@@ -426,11 +442,9 @@ def open_inventory_menu():
                             parts.append("Restores Full HP/MP")
                         bonus_text = ", ".join(parts) if parts else "No effect"
                         print(Fore.YELLOW + f"    Equipped: {eq['name']}".ljust(40) + f"({bonus_text})")
-                        # Option to unequip
                         index_map.append((char_name, {"type": t, "unequip": True}))
                         print(Fore.LIGHTBLACK_EX + f"    [{len(index_map)}] Unequip")
 
-                    # Show inventory items of same type
                     for item in inventory:
                         if item["type"] == t and item["name"] != equipped.get(t, {}).get("name"):
                             bonus = item.get("bonus", {})
@@ -457,72 +471,62 @@ def open_inventory_menu():
             idx = int(choice) - 1
             if idx < 0 or idx >= len(index_map):
                 raise ValueError
-            char_name, item = index_map[idx]
+            source_name, item = index_map[idx]
             unequip = item.get("unequip", False)
             if unequip:
-                # Unequip item
-                path = os.path.join(save_directory, f"{char_name}.json")
+                path = os.path.join(save_directory, f"{source_name}.json")
                 with open(path, "r") as f:
                     data = json.load(f)
                 pdata = data["player"]
-
-                # Remove equipped item of that type
                 pdata["equipped"] = [e for e in pdata["equipped"] if e["type"] != item["type"]]
                 recalculate_all_stats(pdata)
-
                 if pdata["character"] == player_data["character"]:
                     player_data.update(pdata)
-                    if "bonus" not in item and "effect" in item:
-                        convert_effect_string_to_bonus(item)
                     apply_equipment_bonuses_for(player_data)
-
-                # Also update in-memory player_data if this is the active character
-                if pdata["character"] == player_data["character"]:
-                    player_data.update(pdata)
-                    if "bonus" not in item and "effect" in item:
-                        convert_effect_string_to_bonus(item)
-                    apply_equipment_bonuses_for(player_data)
-
+                data["player"] = pdata
                 with open(path, "w") as f:
                     json.dump(data, f, indent=4)
-
-                print(Fore.YELLOW + f"Unequipped {item['type']} from {char_name}.")
+                print(Fore.YELLOW + f"Unequipped {item['type']} from {source_name}.")
                 press_enter()
-            path = os.path.join(save_directory, f"{char_name}.json")
+                continue
+
+            print(Fore.CYAN + f"Who should equip {item['name']}? (Lucian, Ilana, George)")
+            target_name = input(Fore.GREEN + "> ").strip().capitalize()
+            if target_name not in characters:
+                print(Fore.RED + "Invalid character.")
+                time.sleep(1)
+                continue
+
+            remove_item_from_all_characters(item["name"])
+            # Also remove from source character's inventory if needed
+            if source_name != target_name:
+                source_path = os.path.join(save_directory, f"{source_name}.json")
+                if os.path.exists(source_path):
+                    with open(source_path, "r") as f:
+                        source_data = json.load(f)
+                    source_pdata = source_data["player"]
+                    source_pdata["inventory"] = [i for i in source_pdata["inventory"] if i["name"] != item["name"]]
+                    source_data["player"] = source_pdata
+                    with open(source_path, "w") as f:
+                        json.dump(source_data, f, indent=4)
+
+            path = os.path.join(save_directory, f"{target_name}.json")
             with open(path, "r") as f:
                 data = json.load(f)
             pdata = data["player"]
-
-            # Prevent equipping item if already equipped
-            if any(e["name"] == item["name"] for e in pdata.get("equipped", [])):
-                print(Fore.RED + f"{item['name']} is already equipped.")
-                press_enter()
-
-            # Remove any equipped item of the same type
-            old_equipped = [e for e in pdata["equipped"] if e["type"] == item["type"]]
-            for e in old_equipped:
-                pdata["equipped"].remove(e)
-
+            pdata["equipped"] = [e for e in pdata["equipped"] if e["type"] != item["type"]]
             pdata["equipped"].append(item)
             if "bonus" not in item and "effect" in item:
                 convert_effect_string_to_bonus(item)
-
             apply_equipment_bonuses_for(pdata)
-
-            # Clamp health/mana
             pdata["health"] = min(pdata["health"], pdata["max_health"])
             pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
-
-            # Update runtime player if it's the current character
             if pdata["character"] == player_data["character"]:
                 player_data.update(pdata)
-
-            # CRITICAL: save changes back into data
             data["player"] = pdata
             with open(path, "w") as f:
                 json.dump(data, f, indent=4)
-
-            print(Fore.YELLOW + f"Equipped {item['name']} on {char_name}")
+            print(Fore.YELLOW + f"Equipped {item['name']} on {target_name}")
             press_enter()
         except:
             print(Fore.RED + "Invalid input.")
@@ -619,6 +623,10 @@ def open_upgrade_menu():
                 continue
 
             print("choose skill:")
+            # Ensure skill_upgrade_costs list is the same length as skills
+            if len(player_data["skill_upgrade_costs"]) < len(player_data["skills"]):
+                missing = len(player_data["skills"]) - len(player_data["skill_upgrade_costs"])
+                player_data["skill_upgrade_costs"].extend([1] * missing)
             for i, skill in enumerate(skills):
                 cost = player_data["skill_upgrade_costs"][i]
                 color = Fore.GREEN if player_data["skill_points"] >= cost else Fore.RED
@@ -751,6 +759,9 @@ def open_shop():
                 else:
                     player_data["coins"] -= price
                     player_data["skills"].append(skill_offer["name"])
+                    if "skill_upgrade_costs" not in player_data:
+                        player_data["skill_upgrade_costs"] = []
+                    player_data["skill_upgrade_costs"].append(1)
                     sd = player_data["skill_data"]
                     sd.setdefault("damage", []).append(skill_offer["damage"])
                     sd.setdefault("attacks", []).append(skill_offer["attacks"])
@@ -1147,18 +1158,19 @@ def explore_floor():
     room = persistent_stats["room"]
 
     # === Forced boss fight if room exceeds 10 ===
-    if room > 10:
-        print(Fore.RED + "You have lingered too long... A powerful presence approaches.")
+    # === Boss chance after room 10 ===
+    if room > 10 and random.random() < 0.40:
+        print(Fore.RED + "A powerful enemy blocks your path!")
         boss = get_boss(floor).copy()
         boss["max_health"] = boss["health"]
         current_monster_group = [boss]
         clear_screen()
         print(Fore.RED + Style.BRIGHT + "\n" + "=" * 50)
-        print(Fore.MAGENTA + Style.BRIGHT + "!!! FORCED BOSS ENCOUNTER !!!".center(50))
+        print(Fore.MAGENTA + Style.BRIGHT + "!!! RANDOM BOSS ENCOUNTER !!!".center(50))
         print("=" * 50)
         print("\n" + rainbow_text(boss["name"].center(50)))
         print("=" * 50 + "\n")
-        time.sleep(5)
+        time.sleep(3)
         result = combat(player_data, current_monster_group)
 
         if result == "exit":
@@ -1167,7 +1179,7 @@ def explore_floor():
             print("You died to the boss...")
             return False
 
-        print(Fore.GREEN + Style.BRIGHT + "\n=== BOSS DEFEATED! FLOOR COMPLETE! ===")
+        print(Fore.GREEN + Style.BRIGHT + "\n=== BOSS DEFEATED! FLOOR ADVANCED! ===")
         time.sleep(1)
         persistent_stats["room"] = 1
         persistent_stats["floor"] += 1
