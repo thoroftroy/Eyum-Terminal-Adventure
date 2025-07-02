@@ -390,49 +390,31 @@ def open_treasure_room():
     press_enter()
 
 def open_inventory_menu():
-    clear_screen()
-    print(Fore.BLUE + "--- Party Inventory & Equipment ---")
+    while True:
+        clear_screen()
+        print(Fore.BLUE + "--- Party Inventory & Equipment ---")
 
-    all_items = []
-    index_map = []
-    for char_name in characters:
-        path = os.path.join(save_directory, f"{char_name}.json")
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, "r") as f:
-                data = json.load(f)
-            pdata = data["player"]
-            equipped = {item["type"]: item for item in pdata.get("equipped", [])}
-            inventory = pdata.get("inventory", [])
-            types = ["weapon", "armor", "magic", "relic", "potion"]
-            print(Fore.CYAN + f"\n== {char_name}'s Inventory ==")
-            for t in types:
-                print(Fore.LIGHTBLACK_EX + f"\n  {t.capitalize()}:")
+        all_items = []
+        index_map = []
+        for char_name in characters:
+            path = os.path.join(save_directory, f"{char_name}.json")
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                pdata = data["player"]
+                equipped = {item["type"]: item for item in pdata.get("equipped", [])}
+                inventory = pdata.get("inventory", [])
+                types = ["weapon", "armor", "magic", "relic", "potion"]
+                print(Fore.CYAN + f"\n== {char_name}'s Inventory ==")
+                for t in types:
+                    print(Fore.LIGHTBLACK_EX + f"\n  {t.capitalize()}:")
 
-                # Show equipped item
-                if t in equipped:
-                    eq = equipped[t]
-                    bonus = eq.get("bonus", {})
-                    parts = []
-                    if bonus.get("damage"):
-                        parts.append(f"+{bonus['damage']} dmg")
-                    if bonus.get("max_health"):
-                        parts.append(f"+{bonus['max_health']} HP")
-                    if bonus.get("max_mana"):
-                        parts.append(f"+{bonus['max_mana']} MP")
-                    if eq.get("restore_full"):
-                        parts.append("Restores Full HP/MP")
-                    bonus_text = ", ".join(parts) if parts else "No effect"
-                    print(Fore.YELLOW + f"    Equipped: {eq['name']}".ljust(40) + f"({bonus_text})")
-                    # Option to unequip
-                    index_map.append((char_name, {"type": t, "unequip": True}))
-                    print(Fore.LIGHTBLACK_EX + f"    [{len(index_map)}] Unequip")
-
-                # Show inventory items of same type
-                for item in inventory:
-                    if item["type"] == t and item["name"] != equipped.get(t, {}).get("name"):
-                        bonus = item.get("bonus", {})
+                    # Show equipped item
+                    if t in equipped:
+                        eq = equipped[t]
+                        bonus = eq.get("bonus", {})
                         parts = []
                         if bonus.get("damage"):
                             parts.append(f"+{bonus['damage']} dmg")
@@ -440,95 +422,111 @@ def open_inventory_menu():
                             parts.append(f"+{bonus['max_health']} HP")
                         if bonus.get("max_mana"):
                             parts.append(f"+{bonus['max_mana']} MP")
-                        if item.get("restore_full"):
+                        if eq.get("restore_full"):
                             parts.append("Restores Full HP/MP")
                         bonus_text = ", ".join(parts) if parts else "No effect"
-                        index_map.append((char_name, item))
-                        print(Fore.WHITE + f"    [{len(index_map)}] {item['name']}".ljust(40) + f"({bonus_text})")
-        except Exception as e:
-            print(Fore.RED + f"[ERROR] {char_name}: {e}")
+                        print(Fore.YELLOW + f"    Equipped: {eq['name']}".ljust(40) + f"({bonus_text})")
+                        # Option to unequip
+                        index_map.append((char_name, {"type": t, "unequip": True}))
+                        print(Fore.LIGHTBLACK_EX + f"    [{len(index_map)}] Unequip")
 
-    print(Fore.GREEN + "\nType the item number to equip it, or 'exit' to go back.")
-    choice = input(Fore.GREEN + "> ").strip().lower()
-    if choice == "exit":
-        return
-    try:
-        idx = int(choice) - 1
-        if idx < 0 or idx >= len(index_map):
-            raise ValueError
-        char_name, item = index_map[idx]
-        unequip = item.get("unequip", False)
-        if unequip:
-            # Unequip item
+                    # Show inventory items of same type
+                    for item in inventory:
+                        if item["type"] == t and item["name"] != equipped.get(t, {}).get("name"):
+                            bonus = item.get("bonus", {})
+                            parts = []
+                            if bonus.get("damage"):
+                                parts.append(f"+{bonus['damage']} dmg")
+                            if bonus.get("max_health"):
+                                parts.append(f"+{bonus['max_health']} HP")
+                            if bonus.get("max_mana"):
+                                parts.append(f"+{bonus['max_mana']} MP")
+                            if item.get("restore_full"):
+                                parts.append("Restores Full HP/MP")
+                            bonus_text = ", ".join(parts) if parts else "No effect"
+                            index_map.append((char_name, item))
+                            print(Fore.WHITE + f"    [{len(index_map)}] {item['name']}".ljust(40) + f"({bonus_text})")
+            except Exception as e:
+                print(Fore.RED + f"[ERROR] {char_name}: {e}")
+
+        print(Fore.GREEN + "\nType the item number to equip it, or 'exit' to go back.")
+        choice = input(Fore.GREEN + "> ").strip().lower()
+        if choice == "exit":
+            return
+        try:
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(index_map):
+                raise ValueError
+            char_name, item = index_map[idx]
+            unequip = item.get("unequip", False)
+            if unequip:
+                # Unequip item
+                path = os.path.join(save_directory, f"{char_name}.json")
+                with open(path, "r") as f:
+                    data = json.load(f)
+                pdata = data["player"]
+
+                # Remove equipped item of that type
+                pdata["equipped"] = [e for e in pdata["equipped"] if e["type"] != item["type"]]
+                recalculate_all_stats(pdata)
+
+                if pdata["character"] == player_data["character"]:
+                    player_data.update(pdata)
+                    if "bonus" not in item and "effect" in item:
+                        convert_effect_string_to_bonus(item)
+                    apply_equipment_bonuses_for(player_data)
+
+                # Also update in-memory player_data if this is the active character
+                if pdata["character"] == player_data["character"]:
+                    player_data.update(pdata)
+                    if "bonus" not in item and "effect" in item:
+                        convert_effect_string_to_bonus(item)
+                    apply_equipment_bonuses_for(player_data)
+
+                with open(path, "w") as f:
+                    json.dump(data, f, indent=4)
+
+                print(Fore.YELLOW + f"Unequipped {item['type']} from {char_name}.")
+                press_enter()
             path = os.path.join(save_directory, f"{char_name}.json")
             with open(path, "r") as f:
                 data = json.load(f)
             pdata = data["player"]
 
-            # Remove equipped item of that type
-            pdata["equipped"] = [e for e in pdata["equipped"] if e["type"] != item["type"]]
-            recalculate_all_stats(pdata)
+            # Prevent equipping item if already equipped
+            if any(e["name"] == item["name"] for e in pdata.get("equipped", [])):
+                print(Fore.RED + f"{item['name']} is already equipped.")
+                press_enter()
 
+            # Remove any equipped item of the same type
+            old_equipped = [e for e in pdata["equipped"] if e["type"] == item["type"]]
+            for e in old_equipped:
+                pdata["equipped"].remove(e)
+
+            pdata["equipped"].append(item)
+            if "bonus" not in item and "effect" in item:
+                convert_effect_string_to_bonus(item)
+
+            apply_equipment_bonuses_for(pdata)
+
+            # Clamp health/mana
+            pdata["health"] = min(pdata["health"], pdata["max_health"])
+            pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
+
+            # Update runtime player if it's the current character
             if pdata["character"] == player_data["character"]:
                 player_data.update(pdata)
-                if "bonus" not in item and "effect" in item:
-                    convert_effect_string_to_bonus(item)
-                apply_equipment_bonuses_for(player_data)
 
-            # Also update in-memory player_data if this is the active character
-            if pdata["character"] == player_data["character"]:
-                player_data.update(pdata)
-                if "bonus" not in item and "effect" in item:
-                    convert_effect_string_to_bonus(item)
-                apply_equipment_bonuses_for(player_data)
-
+            # CRITICAL: save changes back into data
+            data["player"] = pdata
             with open(path, "w") as f:
                 json.dump(data, f, indent=4)
 
-            print(Fore.YELLOW + f"Unequipped {item['type']} from {char_name}.")
+            print(Fore.YELLOW + f"Equipped {item['name']} on {char_name}")
             press_enter()
-            return open_inventory_menu()  # Recursively reloads the screen
-        path = os.path.join(save_directory, f"{char_name}.json")
-        with open(path, "r") as f:
-            data = json.load(f)
-        pdata = data["player"]
-
-        # Prevent equipping item if already equipped
-        if any(e["name"] == item["name"] for e in pdata.get("equipped", [])):
-            print(Fore.RED + f"{item['name']} is already equipped.")
-            press_enter()
-            return open_inventory_menu()  # Recursively reloads the screen
-
-        # Remove any equipped item of the same type
-        old_equipped = [e for e in pdata["equipped"] if e["type"] == item["type"]]
-        for e in old_equipped:
-            pdata["equipped"].remove(e)
-
-        pdata["equipped"].append(item)
-        if "bonus" not in item and "effect" in item:
-            convert_effect_string_to_bonus(item)
-
-        apply_equipment_bonuses_for(pdata)
-
-        # Clamp health/mana
-        pdata["health"] = min(pdata["health"], pdata["max_health"])
-        pdata["mana"] = min(pdata["mana"], pdata["max_mana"])
-
-        # Update runtime player if it's the current character
-        if pdata["character"] == player_data["character"]:
-            player_data.update(pdata)
-
-        # CRITICAL: save changes back into data
-        data["player"] = pdata
-        with open(path, "w") as f:
-            json.dump(data, f, indent=4)
-
-        print(Fore.YELLOW + f"Equipped {item['name']} on {char_name}")
-        press_enter()
-    except:
-        print(Fore.RED + "Invalid input.")
-        time.sleep(0.5)
-        return open_inventory_menu()
+        except:
+            print(Fore.RED + "Invalid input.")
+            time.sleep(0.5)
 
 def open_upgrade_menu():
     # initialize upgrade cost trackers if not present
@@ -813,7 +811,8 @@ def generate_monster_group():
 
 def get_boss(floor):
     i = persistent_stats.get("monster_rotation_index", 0)
-    return monster_list[min(i + 2, len(monster_list) - 1)]  # Last in current rotation
+    boss_index = min(i + 3, len(monster_list) - 1)
+    return monster_list[boss_index]
 
 def rotate_monsters():
     i = persistent_stats.get("monster_rotation_index", 0)
